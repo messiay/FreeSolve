@@ -1,20 +1,37 @@
-P_sat: 0.003
-alpha: 2.5
+# SolvDock Physical Constants: Official Production Pipeline
+# Derived via UFF-conformer co-calibration on uncontaminated FreeSolv Slice 2 [50:100]
+# Charge model: MMFF94
+# Conformer model: RDKit ETKDG + UFF energy minimization (seed=42, raw SMILES)
+
+P_sat: 0.0035
+alpha: 3.5
 beta: 0.0001
-chi_e: 0.007
+chi_e: 0.0070
 cs2: 0.5
-train_size: 100
-train_pearson_r: 0.7208
-train_spearman_rho: 0.7315
-train_rmse: 2.8360
-train_mae: 2.2380
+
+# Provenance & Audit Metadata
+calibration_slice: "FreeSolv Slice 2 [50:100]"
+calibration_slice_size: 50
+calibration_push_pull_nitroaromatics: 0
+conformer_method: "rdkit_etkdg_uff"
+charge_model: "mmff94"
+calibration_objective: "composite_rmse_over_r2"
+
+# In-sample performance on Slice 2 [50:100]
+train_size: 50
+train_pearson_r: 0.7995
+train_rmse: 2.9380
+
+# Held-out Test Split (N=128, 20% frozen seed=42)
 test_size: 128
-test_pearson_r: 0.7355
-test_spearman_rho: 0.7468
-test_rmse: 2.8663
-test_mae: 2.3119
+test_pearson_r: 0.7583
+test_spearman_rho: 0.7751
+test_rmse: 2.8450
+test_mae: 2.3012
+
+# Clean Test Subset (Excluding push-pull nitroaromatic failure class, N=126)
 clean_test_size: 126
-clean_test_pearson_r: 0.7736
-clean_test_spearman_rho: 0.7642
-clean_test_rmse: 2.7487
-clean_test_mae: 2.2367
+clean_test_pearson_r: 0.7940
+clean_test_spearman_rho: 0.7929
+clean_test_rmse: 2.7201
+clean_test_mae: 2.2237

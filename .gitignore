@@ -8,3 +8,20 @@ build/
 .DS_Store
 *.log
 refined_pose.sdf
+
+# Heavy simulation grids and downloaded structural datasets
+data/gist/
+data/casf2016/*.pdb
+data/casf2016/*.sdf
+data/casf2016_core/
+checkpoints/
+
+# Generic heavy file protection (with test fixture exceptions)
+*.npz
+*.mol2
+*.pdb
+*.sdf
+!tests/data/*.sdf
+!tests/data/*.pdb
+!data/casf2016/casf2016_core_285.txt
+!data/freesolv/database.txt

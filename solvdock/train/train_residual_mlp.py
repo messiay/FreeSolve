@@ -33,6 +33,7 @@ def prepare_molecule_fields(
     grid_spacing: float = 1.0,
     device: str = "cpu",
     charge_model: str = "mmff94",
+    optimize_conformer: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Prepares external electric field and solvent density for a small molecule."""
     mol = Chem.MolFromSmiles(smiles)
@@ -41,6 +42,8 @@ def prepare_molecule_fields(
 
     mol = Chem.AddHs(mol)
     AllChem.EmbedMolecule(mol, randomSeed=42)
+    if optimize_conformer:
+        AllChem.UFFOptimizeMolecule(mol)
 
     num_atoms = mol.GetNumAtoms()
     conf = mol.GetConformer()
