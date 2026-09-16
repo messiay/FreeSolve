@@ -24,4 +24,5 @@ checkpoints/
 !tests/data/*.sdf
 !tests/data/*.pdb
 !data/casf2016/casf2016_core_285.txt
+!data/casf2016/CoreSet.dat
 !data/freesolv/database.txt

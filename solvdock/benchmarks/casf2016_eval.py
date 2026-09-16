@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from typing import Optional
 import numpy as np
 import scipy.stats as stats
 import torch
@@ -82,14 +83,15 @@ def run_casf2016_benchmark(
     checkpoint_path: str = "checkpoints/residual_mlp.pt",
     casf_dir: str = "data/casf2016",
     max_steps: int = 15,
+    max_complexes: Optional[int] = None,
 ):
     """Executes evaluation on real crystallographic protein-ligand structures."""
     print("=" * 76)
     print("CASF-2016 EVALUATION ON AUTHENTIC PDB CRYSTAL STRUCTURES")
     print("=" * 76)
 
-    # Line 91: Loads real crystal complexes downloaded from RCSB PDB
-    complexes = load_all_casf_complexes(out_dir=casf_dir)
+    # Loads real crystal complexes downloaded from RCSB PDB
+    complexes = load_all_casf_complexes(out_dir=casf_dir, max_complexes=max_complexes)
     print(f"Loaded {len(complexes)} authentic crystal complexes from disk directory '{casf_dir}'.")
 
     refiner = SolvDockRefiner(
@@ -173,6 +175,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default="checkpoints/residual_mlp.pt")
     parser.add_argument("--casf_dir", type=str, default="data/casf2016")
     parser.add_argument("--steps", type=int, default=10)
+    parser.add_argument("--max_complexes", type=int, default=None, help="Max complexes to evaluate (default: all 285)")
     args = parser.parse_args()
 
     run_casf2016_benchmark(
@@ -181,4 +184,5 @@ if __name__ == "__main__":
         checkpoint_path=args.checkpoint,
         casf_dir=args.casf_dir,
         max_steps=args.steps,
+        max_complexes=args.max_complexes,
     )
