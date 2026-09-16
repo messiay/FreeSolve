@@ -40,6 +40,7 @@ class CombinedPotential(nn.Module):
         poisson_method: str = "greens_function",
         r_min: float = 0.8,
         gamma_rot: float = 0.50,
+        max_pair_repulsion: float = 25.0,
     ):
         super().__init__()
         self.pde_solver = pde_solver
@@ -47,6 +48,7 @@ class CombinedPotential(nn.Module):
         self.poisson_method = str(poisson_method)
         self.r_min = float(r_min)
         self.gamma_rot = float(gamma_rot)
+        self.max_pair_repulsion = float(max_pair_repulsion) if max_pair_repulsion is not None else None
 
     def get_atom_params(
         self, atomic_numbers: torch.Tensor, device: torch.device
@@ -71,7 +73,7 @@ class CombinedPotential(nn.Module):
         pocket_charges: torch.Tensor,
         pocket_z: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Computes 12-6 Lennard-Jones with soft-core clipping and Coulombic electrostatics.
+        """Computes 12-6 Lennard-Jones with soft-core clipping, pair repulsion cap, and Coulombic electrostatics.
 
         Returns (E_direct, E_LJ, E_Coulomb).
         """
@@ -101,7 +103,10 @@ class CombinedPotential(nn.Module):
 
         # 12-6 LJ: 4 * eps * [ (sig/r)^12 - (sig/r)^6 ]
         ratio6 = (sigma_ij ** 6) / r_eff6
-        e_lj = torch.sum(4.0 * epsilon_ij * (ratio6 ** 2 - ratio6))
+        pair_lj = 4.0 * epsilon_ij * (ratio6 ** 2 - ratio6)
+        if self.max_pair_repulsion is not None:
+            pair_lj = torch.clamp(pair_lj, max=self.max_pair_repulsion)
+        e_lj = torch.sum(pair_lj)
 
         # Coulomb: 332.0637 * (q_i * q_j) / (eps_eff * r)
         # Using distance-dependent dielectric eps_eff = 2.0 * r_eff for biological screening
@@ -114,13 +119,49 @@ class CombinedPotential(nn.Module):
         e_direct = e_lj + e_coulomb
         return e_direct, e_lj, e_coulomb
 
+    def compute_solvent_density(
+        self,
+        coords: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+        grid_origin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Computes Boltzmann excluded-volume solvent density field rho(r)."""
+        device = coords.device
+        dtype = coords.dtype
+        N = coords.shape[0]
+        D = H = W = self.grid_engine.box_size
+        if N == 0:
+            return torch.full((1, 1, D, H, W), 0.0333, device=device, dtype=dtype)
+
+        vdw_map = {1: 1.20, 6: 1.70, 7: 1.55, 8: 1.52, 9: 1.47, 15: 1.80, 16: 1.80, 17: 1.75, 35: 1.85, 53: 1.98}
+        vdw_list = [vdw_map.get(int(z), 1.70) for z in atomic_numbers.cpu().tolist()]
+        vdw = torch.tensor(vdw_list, dtype=dtype, device=device).unsqueeze(1)
+
+        Z, Y, X = self.grid_engine.get_grid_coords(grid_origin, device=device)
+        grid_pts = torch.stack([X.reshape(-1), Y.reshape(-1), Z.reshape(-1)], dim=-1)
+
+        v_steric = torch.zeros(grid_pts.shape[0], device=device, dtype=dtype)
+        chunk_size = 200
+        for start in range(0, N, chunk_size):
+            c_chunk = coords[start : start + chunk_size]
+            v_chunk = vdw[start : start + chunk_size]
+            diff = grid_pts.unsqueeze(0) - c_chunk.unsqueeze(1)
+            dist = torch.sqrt(torch.sum(diff ** 2, dim=-1) + 1e-8)
+            v_steric = v_steric + torch.sum(torch.clamp((v_chunk / dist) ** 12, max=50.0), dim=0)
+
+        v_steric = v_steric.view(1, 1, D, H, W)
+        rho_0 = 0.0333
+        rho = rho_0 * torch.exp(-torch.clamp(v_steric, max=25.0) / 0.592)
+        return rho
+
     def compute_solvation(
         self,
         coords: torch.Tensor,
         charges: torch.Tensor,
+        atomic_numbers: Optional[torch.Tensor] = None,
         grid_origin: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Computes solvation free energy for atomic coordinates and partial charges."""
+        """Computes solvation free energy for atomic coordinates, charges, and solvent cavity."""
         if coords.shape[0] == 0:
             zero = torch.zeros(1, device=coords.device, dtype=coords.dtype).squeeze()
             return zero, {"enthalpy": zero, "trans_entropy": zero, "orient_entropy": zero}
@@ -136,7 +177,12 @@ class CombinedPotential(nn.Module):
             method=self.poisson_method,
         )
         E_field = compute_field(phi, grid_spacing=self.grid_engine.grid_spacing)
-        return self.pde_solver(E_field)
+
+        rho = None
+        if atomic_numbers is not None and atomic_numbers.shape[0] == coords.shape[0]:
+            rho = self.compute_solvent_density(coords, atomic_numbers, grid_origin)
+
+        return self.pde_solver(E_field, rho_solute=rho)
 
     def forward(
         self,
@@ -164,20 +210,25 @@ class CombinedPotential(nn.Module):
         if pocket_coords.shape[0] > 0:
             all_coords = torch.cat([ligand_coords, pocket_coords], dim=0)
             all_charges = torch.cat([ligand_charges, pocket_charges], dim=0)
-            dG_complex, pde_comp_c = self.compute_solvation(all_coords, all_charges, grid_origin=grid_origin)
+            all_z = torch.cat([ligand_z, pocket_z], dim=0) if (ligand_z is not None and pocket_z is not None) else None
+            dG_complex, pde_comp_c = self.compute_solvation(
+                all_coords, all_charges, atomic_numbers=all_z, grid_origin=grid_origin
+            )
         else:
-            dG_complex, pde_comp_c = self.compute_solvation(ligand_coords, ligand_charges, grid_origin=grid_origin)
+            dG_complex, pde_comp_c = self.compute_solvation(
+                ligand_coords, ligand_charges, atomic_numbers=ligand_z, grid_origin=grid_origin
+            )
 
         # Step 3: Solvation of isolated pocket (can be precomputed outside optimization loop)
         if dG_pocket is None:
             if pocket_coords.shape[0] > 0:
-                dG_pocket, _ = self.compute_solvation(pocket_coords, pocket_charges)
+                dG_pocket, _ = self.compute_solvation(pocket_coords, pocket_charges, atomic_numbers=pocket_z)
             else:
                 dG_pocket = torch.zeros(1, device=ligand_coords.device, dtype=ligand_coords.dtype).squeeze()
 
         # Step 4: Solvation of isolated ligand
         if dG_ligand is None:
-            dG_ligand, _ = self.compute_solvation(ligand_coords, ligand_charges)
+            dG_ligand, _ = self.compute_solvation(ligand_coords, ligand_charges, atomic_numbers=ligand_z)
 
         # Step 5: Net desolvation, conformational entropy, and binding free energy
         if pocket_coords.shape[0] > 0:

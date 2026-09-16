@@ -1,0 +1,26 @@
+{
+  "model_type": "3-state MM/PBSA (E_direct, Delta_Delta_G_solv, Delta_G_rot)",
+  "w_direct": -0.020083332983229268,
+  "w_solv": -0.28199180053007344,
+  "w_rot": 0.18367009497921008,
+  "intercept": 0.24037894937849735,
+  "full_coreset": {
+    "num_complexes": 285,
+    "raw_pearson_r": 0.3282670514478431,
+    "raw_spearman_rho": 0.5649670698378384,
+    "oof_pearson_r": 0.4367401741987663,
+    "oof_spearman_rho": 0.5058934084788961,
+    "oof_rmse": 2.0094280113484766
+  },
+  "clean_subset": {
+    "num_complexes": 273,
+    "excluded_clashes": 12,
+    "raw_pearson_r": 0.4791394875209473,
+    "raw_spearman_rho": 0.5624920377469769,
+    "oof_pearson_r_3term": 0.4617464354862228,
+    "oof_spearman_rho_3term": 0.5308105985357401,
+    "oof_pearson_r_4term": 0.5031791523223408,
+    "oof_spearman_rho_4term": 0.5641647125168862,
+    "oof_rmse": 1.8922388768469605
+  }
+}

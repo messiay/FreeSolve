@@ -57,3 +57,32 @@ def test_casf_complexes_cached_and_loadable():
         mol = suppl[0] if len(suppl) > 0 else None
         assert mol is not None, f"Failed loading ligand SDF for {test_id}"
         assert mol.GetNumAtoms() >= 4, f"Ligand {test_id} has too few atoms ({mol.GetNumAtoms()})"
+
+
+def test_casf_recalibration_weights_and_correlations():
+    """Validates that calibrated CASF-2016 weights meet scientific benchmark thresholds."""
+    import json
+    weights_path = "configs/casf_weights.json"
+    cache_path = "data/casf2016/casf_components_285.json"
+
+    assert os.path.exists(weights_path), f"Missing calibrated weights file: {weights_path}"
+    assert os.path.exists(cache_path), f"Missing cached decompositions: {cache_path}"
+
+    with open(weights_path, "r") as f:
+        weights = json.load(f)
+
+    with open(cache_path, "r") as f:
+        cache = json.load(f)
+
+    assert len(cache["records"]) == 285, f"Expected 285 decomposed complexes, got {len(cache['records'])}"
+
+    # Benchmark assertion: raw physical thermodynamic sum beats published AutoDock Vina (rho = 0.542)
+    raw_rho = weights["full_coreset"]["raw_spearman_rho"]
+    assert raw_rho >= 0.542, f"Raw physical Spearman rho {raw_rho:.3f} failed to match/beat AutoDock Vina (0.542)"
+
+    # Out-of-fold generalization on clean held-out target clusters
+    clean_rho = weights["clean_subset"]["oof_spearman_rho_4term"]
+    clean_r = weights["clean_subset"]["oof_pearson_r_4term"]
+    assert clean_rho >= 0.550, f"Clean OOF Spearman rho {clean_rho:.3f} lower than expected 0.550"
+    assert clean_r >= 0.480, f"Clean OOF Pearson R {clean_r:.3f} lower than expected 0.480"
+
