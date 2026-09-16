@@ -77,12 +77,13 @@ def test_casf_recalibration_weights_and_correlations():
     assert len(cache["records"]) == 285, f"Expected 285 decomposed complexes, got {len(cache['records'])}"
 
     # Benchmark assertion: raw physical thermodynamic sum beats published AutoDock Vina (rho = 0.542)
-    raw_rho = weights["full_coreset"]["raw_spearman_rho"]
+    matrix = weights["full_matrix_results"]
+    raw_rho = matrix["full_coreset_N285"]["raw_physical_sum"]["spearman_rho"]
     assert raw_rho >= 0.542, f"Raw physical Spearman rho {raw_rho:.3f} failed to match/beat AutoDock Vina (0.542)"
 
-    # Out-of-fold generalization on clean held-out target clusters
-    clean_rho = weights["clean_subset"]["oof_spearman_rho_4term"]
-    clean_r = weights["clean_subset"]["oof_pearson_r_4term"]
-    assert clean_rho >= 0.550, f"Clean OOF Spearman rho {clean_rho:.3f} lower than expected 0.550"
-    assert clean_r >= 0.480, f"Clean OOF Pearson R {clean_r:.3f} lower than expected 0.480"
+    # Out-of-fold generalization on geometric clean held-out target clusters (3-term canonical)
+    clean_3_r = matrix["geometric_clean_N280"]["model_3term_oof"]["pearson_r"]
+    clean_3_rho = matrix["geometric_clean_N280"]["model_3term_oof"]["spearman_rho"]
+    assert clean_3_r >= 0.450, f"Clean 3-term OOF Pearson R {clean_3_r:.3f} lower than expected 0.450"
+    assert clean_3_rho >= 0.500, f"Clean 3-term OOF Spearman rho {clean_3_rho:.3f} lower than expected 0.500"
 

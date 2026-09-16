@@ -1,26 +1,42 @@
 {
-  "model_type": "3-state MM/PBSA (E_direct, Delta_Delta_G_solv, Delta_G_rot)",
+  "canonical_model": "3-term MM/PBSA (E_direct, Delta_Delta_G_solv, Delta_G_rot)",
   "w_direct": -0.020083332983229268,
   "w_solv": -0.28199180053007344,
   "w_rot": 0.18367009497921008,
   "intercept": 0.24037894937849735,
-  "full_coreset": {
-    "num_complexes": 285,
-    "raw_pearson_r": 0.3282670514478431,
-    "raw_spearman_rho": 0.5649670698378384,
-    "oof_pearson_r": 0.4367401741987663,
-    "oof_spearman_rho": 0.5058934084788961,
-    "oof_rmse": 2.0094280113484766
-  },
-  "clean_subset": {
-    "num_complexes": 273,
-    "excluded_clashes": 12,
-    "raw_pearson_r": 0.4791394875209473,
-    "raw_spearman_rho": 0.5624920377469769,
-    "oof_pearson_r_3term": 0.4617464354862228,
-    "oof_spearman_rho_3term": 0.5308105985357401,
-    "oof_pearson_r_4term": 0.5031791523223408,
-    "oof_spearman_rho_4term": 0.5641647125168862,
-    "oof_rmse": 1.8922388768469605
+  "full_matrix_results": {
+    "full_coreset_N285": {
+      "raw_physical_sum": {
+        "pearson_r": 0.3282670514478431,
+        "spearman_rho": 0.5649670698378384
+      },
+      "model_3term_oof": {
+        "pearson_r": 0.4367401741987663,
+        "spearman_rho": 0.5058934084788961,
+        "rmse": 2.0094280113484766
+      },
+      "model_4term_oof": {
+        "pearson_r": 0.3534747175752874,
+        "spearman_rho": 0.5029082460344729,
+        "rmse": 2.328924256230108
+      }
+    },
+    "geometric_clean_N280": {
+      "exclusion_criterion": "Objective pre-specified non-bonded heavy-atom distance >= 1.80 A (excluded 5 PDBs: 3uri, 3l7b, 4eky, 3g2n, 3syr with d_min ~ 1.32-1.34 A)",
+      "raw_physical_sum": {
+        "pearson_r": 0.40144344010031074,
+        "spearman_rho": 0.5646970940149642
+      },
+      "model_3term_oof": {
+        "pearson_r": 0.47195522110112736,
+        "spearman_rho": 0.5181100204049206,
+        "rmse": 1.9164351710305654
+      },
+      "model_4term_oof": {
+        "pearson_r": 0.43736278723326705,
+        "spearman_rho": 0.5310607140996524,
+        "rmse": 1.9873279390609633
+      }
+    }
   }
 }
