@@ -39,12 +39,14 @@ class CombinedPotential(nn.Module):
         grid_engine: SpatialGridEngine,
         poisson_method: str = "greens_function",
         r_min: float = 0.8,
+        gamma_rot: float = 0.50,
     ):
         super().__init__()
         self.pde_solver = pde_solver
         self.grid_engine = grid_engine
         self.poisson_method = str(poisson_method)
         self.r_min = float(r_min)
+        self.gamma_rot = float(gamma_rot)
 
     def get_atom_params(
         self, atomic_numbers: torch.Tensor, device: torch.device
@@ -147,9 +149,10 @@ class CombinedPotential(nn.Module):
         grid_origin: Optional[torch.Tensor] = None,
         dG_pocket: Optional[torch.Tensor] = None,
         dG_ligand: Optional[torch.Tensor] = None,
+        num_rotatable_bonds: Optional[int] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Evaluates thermodynamic binding free energy via the 3-state MM/PBSA cycle:
-        Delta_G_bind = E_direct + Delta_G_solv(complex) - Delta_G_solv(pocket) - Delta_G_solv(ligand).
+        Delta_G_bind = E_direct + Delta_G_solv(complex) - Delta_G_solv(pocket) - Delta_G_solv(ligand) + Delta_G_rot.
         """
         # Step 1: Direct interaction energy
         e_direct, e_lj, e_coulomb = self.compute_direct_energy(
@@ -176,13 +179,23 @@ class CombinedPotential(nn.Module):
         if dG_ligand is None:
             dG_ligand, _ = self.compute_solvation(ligand_coords, ligand_charges)
 
-        # Step 5: Net desolvation and binding free energy
+        # Step 5: Net desolvation, conformational entropy, and binding free energy
         if pocket_coords.shape[0] > 0:
             ddG_solv = dG_complex - dG_pocket - dG_ligand
             total_energy = e_direct + ddG_solv
+            if num_rotatable_bonds is not None and num_rotatable_bonds > 0:
+                dG_rot = torch.tensor(
+                    self.gamma_rot * float(num_rotatable_bonds),
+                    dtype=ligand_coords.dtype,
+                    device=ligand_coords.device,
+                )
+                total_energy = total_energy + dG_rot
+            else:
+                dG_rot = torch.zeros(1, dtype=ligand_coords.dtype, device=ligand_coords.device).squeeze()
         else:
             ddG_solv = dG_complex
             total_energy = dG_complex
+            dG_rot = torch.zeros(1, dtype=ligand_coords.dtype, device=ligand_coords.device).squeeze()
 
         components = {
             "total_energy": total_energy,
@@ -195,6 +208,9 @@ class CombinedPotential(nn.Module):
             "dG_complex": dG_complex,
             "dG_pocket": dG_pocket,
             "dG_ligand": dG_ligand,
+            "delta_G_rot": dG_rot,
+            "gamma_rot": torch.tensor(self.gamma_rot, dtype=ligand_coords.dtype, device=ligand_coords.device),
+            "num_rotatable_bonds": torch.tensor(float(num_rotatable_bonds or 0), dtype=ligand_coords.dtype, device=ligand_coords.device),
             "enthalpy": pde_comp_c["enthalpy"],
             "trans_entropy": pde_comp_c["trans_entropy"],
             "orient_entropy": pde_comp_c["orient_entropy"],
@@ -213,6 +229,7 @@ class CombinedPotential(nn.Module):
         grid_origin: Optional[torch.Tensor] = None,
         dG_pocket: Optional[torch.Tensor] = None,
         dG_ligand: Optional[torch.Tensor] = None,
+        num_rotatable_bonds: Optional[int] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Convenience alias for computing binding free energy via the 3-state thermodynamic cycle."""
         return self.forward(
@@ -220,4 +237,5 @@ class CombinedPotential(nn.Module):
             pocket_coords, pocket_charges, pocket_z,
             grid_origin=grid_origin,
             dG_pocket=dG_pocket, dG_ligand=dG_ligand,
+            num_rotatable_bonds=num_rotatable_bonds,
         )

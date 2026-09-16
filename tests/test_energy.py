@@ -140,3 +140,42 @@ def test_salt_bridge_physical_desolvation_penalty():
     # 3. Desolvation cost must be strictly positive (penalty)
     assert comp["ddG_solv"].item() > 0.0, "Desolvating opposite charges to form a contact pair must carry a positive penalty"
 
+
+def test_conformational_entropy_penalty():
+    """Validates that conformational entropy:
+    1. Adds exactly gamma_rot * N_rot to the binding free energy (destabilizing / positive penalty).
+    2. Does not alter coordinate gradients (dL/dx is invariant to constant entropy offset).
+    """
+    grid_engine = SpatialGridEngine(grid_spacing=1.0, box_size=15)
+    pde_solver = SolvationPDESolver(
+        grid_spacing=1.0, steps=3, dt=0.1, alpha=1.0, beta=0.05, cs2=0.5, chi_e=0.8, strict=False
+    )
+    gamma_rot = 0.50
+    potential = CombinedPotential(pde_solver, grid_engine, gamma_rot=gamma_rot)
+
+    c_lig_0 = torch.tensor([[4.0, 5.0, 5.0], [5.2, 5.0, 5.0]], dtype=torch.float32, requires_grad=True)
+    c_lig_4 = torch.tensor([[4.0, 5.0, 5.0], [5.2, 5.0, 5.0]], dtype=torch.float32, requires_grad=True)
+    q = torch.tensor([0.2, -0.2], dtype=torch.float32)
+    z = torch.tensor([6, 8], dtype=torch.int64)
+
+    c_poc = torch.tensor([[8.0, 5.0, 5.0], [9.5, 5.0, 5.0]], dtype=torch.float32)
+    q_poc = torch.tensor([-0.3, 0.3], dtype=torch.float32)
+    z_poc = torch.tensor([7, 6], dtype=torch.int64)
+
+    # 1. Evaluate with 0 rotatable bonds
+    dG_0, comp_0 = potential(c_lig_0, q, z, c_poc, q_poc, z_poc, num_rotatable_bonds=0)
+    dG_0.backward()
+
+    # 2. Evaluate with 4 rotatable bonds
+    dG_4, comp_4 = potential(c_lig_4, q, z, c_poc, q_poc, z_poc, num_rotatable_bonds=4)
+    dG_4.backward()
+
+    # Verify exact scalar offset
+    expected_offset = 4 * gamma_rot  # 2.0 kcal/mol
+    assert torch.allclose(comp_4["delta_G_rot"], torch.tensor(expected_offset), atol=1e-5)
+    assert torch.allclose(dG_4 - dG_0, torch.tensor(expected_offset), atol=1e-5)
+
+    # Verify exact gradient invariance
+    assert torch.allclose(c_lig_0.grad, c_lig_4.grad, atol=1e-6), "Conformational entropy must not distort pose gradients"
+
+

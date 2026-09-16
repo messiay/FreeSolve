@@ -153,6 +153,7 @@ class PoseOptimizer:
                     grid_origin=fixed_grid_origin,
                     dG_pocket=dG_pocket,
                     dG_ligand=dG_lig,
+                    num_rotatable_bonds=K,
                 )
                 delta_G_bind.backward()
                 torch.nn.utils.clip_grad_norm_(params, max_norm=0.5)
@@ -184,6 +185,7 @@ class PoseOptimizer:
                         grid_origin=fixed_grid_origin,
                         dG_pocket=dG_pocket,
                         dG_ligand=dG_lig_best,
+                        num_rotatable_bonds=K,
                     )
 
             if grad_norm < 1e-4:

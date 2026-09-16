@@ -65,11 +65,19 @@ class SolvDockRefiner:
             disable_residual_mlp=self.disable_residual_mlp,
         ).to(self.device)
 
+        gamma_rot = 0.50
+        if os.path.exists(constants_path):
+            import yaml
+            with open(constants_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+                gamma_rot = float(cfg.get("gamma_rot", 0.50))
+
         # 3. Combined Potential
         self.potential = CombinedPotential(
             pde_solver=self.pde_solver,
             grid_engine=self.grid_engine,
             poisson_method="greens_function",
+            gamma_rot=gamma_rot,
         ).to(self.device)
 
         # 4. Pose Optimizer
