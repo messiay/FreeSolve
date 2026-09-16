@@ -112,6 +112,30 @@ class CombinedPotential(nn.Module):
         e_direct = e_lj + e_coulomb
         return e_direct, e_lj, e_coulomb
 
+    def compute_solvation(
+        self,
+        coords: torch.Tensor,
+        charges: torch.Tensor,
+        grid_origin: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """Computes solvation free energy for atomic coordinates and partial charges."""
+        if coords.shape[0] == 0:
+            zero = torch.zeros(1, device=coords.device, dtype=coords.dtype).squeeze()
+            return zero, {"enthalpy": zero, "trans_entropy": zero, "orient_entropy": zero}
+
+        if grid_origin is None:
+            grid_origin = self.grid_engine.get_grid_origin(coords)
+
+        charge_grid = self.grid_engine.deposit_charges(coords, charges, grid_origin)
+        phi = solve_poisson(
+            charge_grid,
+            grid_spacing=self.grid_engine.grid_spacing,
+            epsilon_0=1.0,
+            method=self.poisson_method,
+        )
+        E_field = compute_field(phi, grid_spacing=self.grid_engine.grid_spacing)
+        return self.pde_solver(E_field)
+
     def forward(
         self,
         ligand_coords: torch.Tensor,
@@ -121,15 +145,11 @@ class CombinedPotential(nn.Module):
         pocket_charges: torch.Tensor,
         pocket_z: torch.Tensor,
         grid_origin: Optional[torch.Tensor] = None,
+        dG_pocket: Optional[torch.Tensor] = None,
+        dG_ligand: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Evaluates total free energy: E_direct + ΔG_solv.
-
-        Pipeline path:
-        1. Direct intermolecular energy (LJ + Coulomb).
-        2. Splat combined complex charges onto 3D grid via SpatialGridEngine.
-        3. FFT Poisson solve for electrostatic potential Φ.
-        4. Central-difference gradient for external field E = -∇Φ.
-        5. Unroll Ginzburg-Landau relaxation in SolvationPDESolver to get ΔG_solv.
+        """Evaluates thermodynamic binding free energy via the 3-state MM/PBSA cycle:
+        Delta_G_bind = E_direct + Delta_G_solv(complex) - Delta_G_solv(pocket) - Delta_G_solv(ligand).
         """
         # Step 1: Direct interaction energy
         e_direct, e_lj, e_coulomb = self.compute_direct_energy(
@@ -137,42 +157,47 @@ class CombinedPotential(nn.Module):
             pocket_coords, pocket_charges, pocket_z,
         )
 
-        # Step 2: Combine atoms into complex
-        all_coords = torch.cat([ligand_coords, pocket_coords], dim=0)
-        all_charges = torch.cat([ligand_charges, pocket_charges], dim=0)
+        # Step 2: Solvation of combined complex
+        if pocket_coords.shape[0] > 0:
+            all_coords = torch.cat([ligand_coords, pocket_coords], dim=0)
+            all_charges = torch.cat([ligand_charges, pocket_charges], dim=0)
+            dG_complex, pde_comp_c = self.compute_solvation(all_coords, all_charges, grid_origin=grid_origin)
+        else:
+            dG_complex, pde_comp_c = self.compute_solvation(ligand_coords, ligand_charges, grid_origin=grid_origin)
 
-        # Step 3: Deposit charges onto 3D spatial grid
-        if grid_origin is None:
-            grid_origin = self.grid_engine.get_grid_origin(all_coords)
+        # Step 3: Solvation of isolated pocket (can be precomputed outside optimization loop)
+        if dG_pocket is None:
+            if pocket_coords.shape[0] > 0:
+                dG_pocket, _ = self.compute_solvation(pocket_coords, pocket_charges)
+            else:
+                dG_pocket = torch.zeros(1, device=ligand_coords.device, dtype=ligand_coords.dtype).squeeze()
 
-        charge_grid = self.grid_engine.deposit_charges(all_coords, all_charges, grid_origin)
+        # Step 4: Solvation of isolated ligand
+        if dG_ligand is None:
+            dG_ligand, _ = self.compute_solvation(ligand_coords, ligand_charges)
 
-        # Step 4: Poisson solve for potential Φ
-        phi = solve_poisson(
-            charge_grid,
-            grid_spacing=self.grid_engine.grid_spacing,
-            epsilon_0=1.0,
-            method=self.poisson_method,
-        )
-
-        # Step 5: Electric field E = -∇Φ
-        E_field = compute_field(phi, grid_spacing=self.grid_engine.grid_spacing)
-
-        # Step 6: Solvation PDE Solver
-        delta_G_solv, pde_comp = self.pde_solver(E_field)
-
-        # Total energy: E_direct + ΔG_solv
-        total_energy = e_direct + delta_G_solv
+        # Step 5: Net desolvation and binding free energy
+        if pocket_coords.shape[0] > 0:
+            ddG_solv = dG_complex - dG_pocket - dG_ligand
+            total_energy = e_direct + ddG_solv
+        else:
+            ddG_solv = dG_complex
+            total_energy = dG_complex
 
         components = {
             "total_energy": total_energy,
+            "delta_G_bind": total_energy,
             "e_direct": e_direct,
             "e_lj": e_lj,
             "e_coulomb": e_coulomb,
-            "delta_G_solv": delta_G_solv,
-            "enthalpy": pde_comp["enthalpy"],
-            "trans_entropy": pde_comp["trans_entropy"],
-            "orient_entropy": pde_comp["orient_entropy"],
+            "ddG_solv": ddG_solv,
+            "delta_G_solv": ddG_solv,
+            "dG_complex": dG_complex,
+            "dG_pocket": dG_pocket,
+            "dG_ligand": dG_ligand,
+            "enthalpy": pde_comp_c["enthalpy"],
+            "trans_entropy": pde_comp_c["trans_entropy"],
+            "orient_entropy": pde_comp_c["orient_entropy"],
         }
 
         return total_energy, components
@@ -185,51 +210,14 @@ class CombinedPotential(nn.Module):
         pocket_coords: torch.Tensor,
         pocket_charges: torch.Tensor,
         pocket_z: torch.Tensor,
+        grid_origin: Optional[torch.Tensor] = None,
+        dG_pocket: Optional[torch.Tensor] = None,
+        dG_ligand: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Computes thermodynamic binding free energy via the MM/PBSA cycle:
-        Delta_G_bind = E_direct + Delta_G_solv(complex) - Delta_G_solv(pocket) - Delta_G_solv(ligand).
-        """
-        # Direct intermolecular energy
-        e_direct, e_lj, e_coulomb = self.compute_direct_energy(
+        """Convenience alias for computing binding free energy via the 3-state thermodynamic cycle."""
+        return self.forward(
             ligand_coords, ligand_charges, ligand_z,
             pocket_coords, pocket_charges, pocket_z,
+            grid_origin=grid_origin,
+            dG_pocket=dG_pocket, dG_ligand=dG_ligand,
         )
-
-        # 1. Solvation of complex
-        all_coords = torch.cat([ligand_coords, pocket_coords], dim=0)
-        all_charges = torch.cat([ligand_charges, pocket_charges], dim=0)
-        orig_c = self.grid_engine.get_grid_origin(all_coords)
-        grid_c = self.grid_engine.deposit_charges(all_coords, all_charges, orig_c)
-        phi_c = solve_poisson(grid_c, grid_spacing=self.grid_engine.grid_spacing)
-        E_c = compute_field(phi_c, grid_spacing=self.grid_engine.grid_spacing)
-        dG_complex, _ = self.pde_solver(E_c)
-
-        # 2. Solvation of isolated pocket
-        orig_p = self.grid_engine.get_grid_origin(pocket_coords)
-        grid_p = self.grid_engine.deposit_charges(pocket_coords, pocket_charges, orig_p)
-        phi_p = solve_poisson(grid_p, grid_spacing=self.grid_engine.grid_spacing)
-        E_p = compute_field(phi_p, grid_spacing=self.grid_engine.grid_spacing)
-        dG_pocket, _ = self.pde_solver(E_p)
-
-        # 3. Solvation of isolated ligand
-        orig_l = self.grid_engine.get_grid_origin(ligand_coords)
-        grid_l = self.grid_engine.deposit_charges(ligand_coords, ligand_charges, orig_l)
-        phi_l = solve_poisson(grid_l, grid_spacing=self.grid_engine.grid_spacing)
-        E_l = compute_field(phi_l, grid_spacing=self.grid_engine.grid_spacing)
-        dG_ligand, _ = self.pde_solver(E_l)
-
-        # Net desolvation
-        ddG_solv = dG_complex - dG_pocket - dG_ligand
-        delta_G_bind = e_direct + ddG_solv
-
-        components = {
-            "delta_G_bind": delta_G_bind,
-            "e_direct": e_direct,
-            "e_lj": e_lj,
-            "e_coulomb": e_coulomb,
-            "ddG_solv": ddG_solv,
-            "dG_complex": dG_complex,
-            "dG_pocket": dG_pocket,
-            "dG_ligand": dG_ligand,
-        }
-        return delta_G_bind, components

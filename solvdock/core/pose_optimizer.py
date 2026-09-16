@@ -89,8 +89,23 @@ class PoseOptimizer:
         fixed_grid_origin = self.potential.grid_engine.get_grid_origin(all_initial)
         ligand_center = lig_coords.mean(dim=0, keepdim=True)
 
-        # 3. Parameters to optimize: thetas (K,), omega (3,), translation (3,)
+        # 3. Precompute static pocket solvation (invariant across all steps for rigid receptor)
+        dG_pocket = None
+        if poc_coords.shape[0] > 0:
+            with torch.no_grad():
+                dG_pocket, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                # Invariance verification check
+                dG_pocket_verify, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                assert torch.allclose(dG_pocket, dG_pocket_verify, atol=1e-6), "Pocket solvation must be strictly invariant"
+
+        # Precompute static ligand solvation if rigid (K == 0)
+        dG_ligand_static = None
         K = topology.rotatable_bonds.shape[0]
+        if K == 0:
+            with torch.no_grad():
+                dG_ligand_static, _ = self.potential.compute_solvation(lig_coords, lig_charges)
+
+        # 4. Parameters to optimize: thetas (K,), omega (3,), translation (3,)
         thetas = torch.zeros(K, dtype=torch.float32, device=self.device, requires_grad=(K > 0))
         omega = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
         translation = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
@@ -111,7 +126,7 @@ class PoseOptimizer:
         best_components = {}
         steps_taken = 0
 
-        # 4. Gradient descent optimization loop
+        # 5. Gradient descent optimization loop
         for step in range(steps):
             steps_taken += 1
 
@@ -124,14 +139,24 @@ class PoseOptimizer:
                 transformed_coords = apply_rigid_transform(
                     curr_coords, omega, translation, center=ligand_center
                 )
-                total_energy, comp = self.potential(
+
+                # If flexible (K > 0), compute ligand self-solvation dynamically
+                # so gradients propagate through internal dihedrals.
+                # If rigid (K == 0), reuse precomputed dG_ligand_static.
+                dG_lig = dG_ligand_static
+                if K > 0:
+                    dG_lig, _ = self.potential.compute_solvation(curr_coords, lig_charges)
+
+                delta_G_bind, comp = self.potential(
                     transformed_coords, lig_charges, lig_z,
                     poc_coords, poc_charges, poc_z,
                     grid_origin=fixed_grid_origin,
+                    dG_pocket=dG_pocket,
+                    dG_ligand=dG_lig,
                 )
-                total_energy.backward()
+                delta_G_bind.backward()
                 torch.nn.utils.clip_grad_norm_(params, max_norm=0.5)
-                return total_energy
+                return delta_G_bind
 
             loss = optimizer.step(closure)
 
@@ -150,21 +175,21 @@ class PoseOptimizer:
                     if K > 0:
                         c = apply_torsions(c, thetas, topology)
                     best_coords = apply_rigid_transform(c, omega, translation, center=ligand_center)
+                    dG_lig_best = dG_ligand_static
+                    if K > 0:
+                        dG_lig_best, _ = self.potential.compute_solvation(c, lig_charges)
                     _, best_components = self.potential(
                         best_coords, lig_charges, lig_z,
                         poc_coords, poc_charges, poc_z,
                         grid_origin=fixed_grid_origin,
+                        dG_pocket=dG_pocket,
+                        dG_ligand=dG_lig_best,
                     )
 
             if grad_norm < 1e-4:
                 break
 
-        # Compute thermodynamic cycle binding free energy on the best pose
-        final_dG_bind, best_components = self.potential.compute_binding_free_energy(
-            best_coords, lig_charges, lig_z, poc_coords, poc_charges, poc_z
-        )
-
-        # 5. Write refined coordinates back into an RDKit Mol
+        # 6. Write refined coordinates back into an RDKit Mol
         refined_mol = Chem.Mol(initial_mol)
         conf = refined_mol.GetConformer()
         best_coords_np = best_coords.detach().cpu().numpy()
@@ -180,7 +205,7 @@ class PoseOptimizer:
 
         return {
             "mol": refined_mol,
-            "delta_G_bind": float(final_dG_bind.item()),
+            "delta_G_bind": float(best_loss),
             "components": {
                 k: float(v.item()) if isinstance(v, torch.Tensor) else float(v)
                 for k, v in best_components.items()
