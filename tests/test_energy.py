@@ -104,3 +104,39 @@ def test_binding_free_energy_decomposition():
     dG_bind.backward()
     assert lig_coords.grad is not None
     assert torch.norm(lig_coords.grad).item() > 0.0
+
+
+def test_salt_bridge_physical_desolvation_penalty():
+    """Validates physical sign/magnitude laws on a salt bridge toy system:
+    1. Isolated ions must have negative solvation free energies (stabilized by dielectric solvent).
+    2. Bound contact dipole must be less solvated than two separated ions (|dG_complex| < |dG_poc| + |dG_lig|).
+    3. Net electrostatic desolvation ddG_solv must be strictly POSITIVE (energetic desolvation penalty).
+    """
+    grid_engine = SpatialGridEngine(grid_spacing=1.0, box_size=25)
+    pde_solver = SolvationPDESolver(
+        grid_spacing=1.0, steps=5, dt=0.1, alpha=1.0, beta=0.05, cs2=0.5, chi_e=0.8, strict=False
+    )
+    potential = CombinedPotential(pde_solver, grid_engine)
+
+    # Cation (+0.5e) and Anion (-0.5e) at 2.5 A contact separation
+    lig_coords = torch.tensor([[11.0, 12.0, 12.0]], dtype=torch.float32)
+    lig_q = torch.tensor([0.5], dtype=torch.float32)
+    lig_z = torch.tensor([7], dtype=torch.int64)
+
+    poc_coords = torch.tensor([[13.5, 12.0, 12.0]], dtype=torch.float32)
+    poc_q = torch.tensor([-0.5], dtype=torch.float32)
+    poc_z = torch.tensor([8], dtype=torch.int64)
+
+    dG_bind, comp = potential(lig_coords, lig_q, lig_z, poc_coords, poc_q, poc_z)
+
+    # 1. Negative solvation of isolated charges
+    assert comp["dG_ligand"].item() < 0.0, "Isolated ligand cation must have negative solvation free energy"
+    assert comp["dG_pocket"].item() < 0.0, "Isolated pocket anion must have negative solvation free energy"
+
+    # 2. Bound dipole complex magnitude is smaller than sum of isolated monopoles
+    sum_unbound = abs(comp["dG_ligand"].item()) + abs(comp["dG_pocket"].item())
+    assert abs(comp["dG_complex"].item()) < sum_unbound, "Contact dipole must generate less total polarization than separated ions"
+
+    # 3. Desolvation cost must be strictly positive (penalty)
+    assert comp["ddG_solv"].item() > 0.0, "Desolvating opposite charges to form a contact pair must carry a positive penalty"
+
