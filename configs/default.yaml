@@ -1,0 +1,26 @@
+grid:
+  spacing: 1.0
+  box_size: 25
+  padding: 6.0
+  sigma: 1.0
+
+poisson:
+  method: "greens_function"
+  epsilon_0: 1.0
+
+pde:
+  steps: 8
+  dt: 0.1
+  temperature: 298.15
+  bulk_density: 0.0333
+  calibrated_constants_path: "configs/calibrated_constants.yaml"
+  residual_mlp_path: "checkpoints/residual_mlp.pt"
+
+optimizer:
+  max_steps: 20
+  lr: 0.05
+  grad_tol: 1.0e-4
+  type: "adam"
+
+energy:
+  r_min: 0.8
