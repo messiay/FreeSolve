@@ -8,7 +8,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 from solvdock.solvation.applicability import check_applicability_domain, ApplicabilityReport
-from solvdock.solvation.born import compute_born_ion_correction
+from solvdock.solvation.born import compute_born_radius, compute_textbook_born_energy
 from solvdock.core.solvation_pde import SolvationPDESolver
 from solvdock.core.grid_engine import SpatialGridEngine
 from solvdock.core.poisson_solver import solve_poisson, compute_field
@@ -20,6 +20,7 @@ class SolvationResult:
     smiles: str
     delta_g_hyd: float
     estimated_error: float
+    uncertainty_provenance: str
     is_within_applicability_domain: bool
     flags: List[str]
     components: Dict[str, float]
@@ -60,52 +61,39 @@ def standardize_smiles(smiles: str) -> str:
     return smiles
 
 
-def predict_solvation(
-    molecule: Union[str, Chem.Mol],
-    compound_id: str = "",
+def get_neutralized_mol(mol: Chem.Mol) -> Chem.Mol:
+    """Attempts standard charge neutralization (e.g. carboxylate -> acid, ammonium -> amine)."""
+    transforms = [
+        ('[O-]', 'O'),
+        ('[N+;!H0]', 'N'),
+        ('[S-]', 'S'),
+        ('[n+;!H0]', 'n'),
+    ]
+    m = Chem.Mol(mol)
+    for p, r in transforms:
+        patt = Chem.MolFromSmarts(p)
+        repl = Chem.MolFromSmiles(r)
+        if patt and m.HasSubstructMatch(patt):
+            try:
+                m = Chem.ReplaceSubstructs(m, patt, repl, replaceAll=True)[0]
+            except Exception:
+                pass
+    try:
+        Chem.SanitizeMol(m)
+    except Exception:
+        pass
+    return m
+
+
+def _solve_neutral_continuum_pde(
+    mol: Chem.Mol,
+    active_solver: SolvationPDESolver,
     ionic_strength: float = 0.0,
     charge_model: str = "mmff94",
     box_size: int = 24,
-    config_path: str = "configs/solvation_v1_0.yaml",
     device: str = "cpu",
-    solver: Optional[SolvationPDESolver] = None,
-) -> SolvationResult:
-    """Predicts hydration free energy with applicability audit and uncertainty estimation.
-
-    Args:
-        molecule: Input SMILES string or RDKit Mol object.
-        compound_id: Optional ID for compound provenance and known-class checks.
-        ionic_strength: Salt concentration / ionic strength in Molar (default 0.0 for pure water).
-        charge_model: Electrostatic partial charge model ('mmff94' or 'gasteiger').
-        box_size: Grid box dimension in voxels (default 24x24x24 A).
-        config_path: Path to frozen v1.0 constants file.
-        device: PyTorch device ('cpu' or 'cuda').
-        solver: Optional pre-instantiated SolvationPDESolver.
-
-    Returns:
-        SolvationResult dataclass with predicted value, error bar, flags, and energy components.
-    """
-    t0 = time.perf_counter()
-
-    # 1. Parse and standardize molecule
-    if isinstance(molecule, str):
-        raw_smiles = molecule
-        std_smiles = standardize_smiles(raw_smiles)
-        mol = Chem.MolFromSmiles(std_smiles)
-        if mol is None:
-            # Fallback to raw smiles
-            mol = Chem.MolFromSmiles(raw_smiles)
-            std_smiles = raw_smiles
-        if mol is None:
-            raise ValueError(f"Could not parse SMILES: '{raw_smiles}'")
-    else:
-        mol = molecule
-        std_smiles = Chem.MolToSmiles(mol)
-
-    # 2. Applicability Domain and Chemistry Audit
-    audit: ApplicabilityReport = check_applicability_domain(mol, compound_id=compound_id)
-
-    # 3. Conformer generation (ETKDG + UFF)
+) -> Tuple[float, str]:
+    """Runs the continuum PDE on a neutral molecule."""
     mol_with_h = Chem.AddHs(mol)
     params = AllChem.ETKDGv3()
     params.randomSeed = 42
@@ -122,7 +110,6 @@ def predict_solvation(
     coords = torch.zeros((num_atoms, 3), dtype=torch.float32, device=device)
     charges = torch.zeros((num_atoms,), dtype=torch.float32, device=device)
 
-    # 4. Partial charge assignment
     charge_model_used = charge_model.lower()
     mmff_props = None
     if charge_model_used == "mmff94":
@@ -133,7 +120,6 @@ def predict_solvation(
             q = float(mmff_props.GetMMFFPartialCharge(i))
             charges[i] = 0.0 if (torch.isnan(torch.tensor(q)) or torch.isinf(torch.tensor(q))) else q
     else:
-        # Fallback to Gasteiger
         charge_model_used = "gasteiger"
         AllChem.ComputeGasteigerCharges(mol_with_h)
         for i, atom in enumerate(mol_with_h.GetAtoms()):
@@ -147,7 +133,6 @@ def predict_solvation(
         pos = conf.GetAtomPosition(i)
         coords[i] = torch.tensor([pos.x, pos.y, pos.z], device=device)
 
-    # 5. Grid deposition and Poisson solve
     engine = SpatialGridEngine(grid_spacing=1.0, box_size=box_size)
     origin = engine.get_grid_origin(coords)
     charge_grid = engine.deposit_charges(coords, charges, origin)
@@ -159,7 +144,6 @@ def predict_solvation(
     )
     E_field = compute_field(phi, grid_spacing=1.0)
 
-    # 6. Steric repulsion volume
     Z, Y, X = engine.get_grid_coords(origin, device=device)
     grid_pts = torch.stack([X.reshape(-1), Y.reshape(-1), Z.reshape(-1)], dim=-1)
     diff = grid_pts.unsqueeze(0) - coords.unsqueeze(1)
@@ -193,35 +177,115 @@ def predict_solvation(
     rho_0 = 0.0333
     rho = rho_0 * torch.exp(-torch.clamp(v_steric, max=25.0) / 0.592)
 
-    # 7. Continuum PDE relaxation
-    active_solver = solver or get_default_solver(config_path=config_path, device=device)
     with torch.no_grad():
         dG_continuum, _ = active_solver(E_field, rho_solute=rho)
     dG_continuum_val = float(dG_continuum.detach().cpu().item())
 
-    # 8. Analytical Born correction for net-charged solutes
-    dG_born_val = 0.0
-    if audit.formal_charge != 0:
-        dG_born_val = compute_born_ion_correction(
-            mol_with_h,
-            epsilon_r=78.4,
-            grid_dimension_angstrom=float(box_size),
-        )
+    return dG_continuum_val, charge_model_used
 
-    total_dG = dG_continuum_val + dG_born_val
+
+def predict_solvation(
+    molecule: Union[str, Chem.Mol],
+    compound_id: str = "",
+    ionic_strength: float = 0.0,
+    charge_model: str = "mmff94",
+    box_size: int = 24,
+    config_path: str = "configs/solvation_v1_0.yaml",
+    device: str = "cpu",
+    solver: Optional[SolvationPDESolver] = None,
+) -> SolvationResult:
+    """Predicts hydration free energy with applicability audit and uncertainty estimation.
+
+    Args:
+        molecule: Input SMILES string or RDKit Mol object.
+        compound_id: Optional ID for compound provenance and known-class checks.
+        ionic_strength: Salt concentration / ionic strength in Molar (default 0.0 for pure water).
+        charge_model: Electrostatic partial charge model ('mmff94' or 'gasteiger').
+        box_size: Grid box dimension in voxels (default 24x24x24 A).
+        config_path: Path to frozen v1.0 constants file.
+        device: PyTorch device ('cpu' or 'cuda').
+        solver: Optional pre-instantiated SolvationPDESolver.
+
+    Returns:
+        SolvationResult dataclass with predicted value, error bar, flags, and energy components.
+    """
+    t0 = time.perf_counter()
+
+    # 1. Parse and standardize molecule
+    if isinstance(molecule, str):
+        raw_smiles = molecule
+        std_smiles = standardize_smiles(raw_smiles)
+        mol = Chem.MolFromSmiles(std_smiles)
+        if mol is None:
+            mol = Chem.MolFromSmiles(raw_smiles)
+            std_smiles = raw_smiles
+        if mol is None:
+            raise ValueError(f"Could not parse SMILES: '{raw_smiles}'")
+    else:
+        mol = molecule
+        std_smiles = Chem.MolToSmiles(mol)
+
+    # 2. Applicability Domain and Chemistry Audit
+    audit: ApplicabilityReport = check_applicability_domain(mol, compound_id=compound_id)
+    flags = list(audit.flags)
+
+    active_solver = solver or get_default_solver(config_path=config_path, device=device)
+
+    # 3. Treatment based on net charge
+    if audit.formal_charge == 0:
+        # Standard neutral continuum PDE evaluation
+        dG_continuum_val, charge_model_used = _solve_neutral_continuum_pde(
+            mol,
+            active_solver,
+            ionic_strength=ionic_strength,
+            charge_model=charge_model,
+            box_size=box_size,
+            device=device,
+        )
+        total_dG = dG_continuum_val
+        components = {
+            "dG_continuum_pde": round(dG_continuum_val, 3),
+            "dG_born_monopole": 0.0,
+            "total_dG_hyd": round(total_dG, 3),
+        }
+    else:
+        # Net-charged species: evaluate textbook Born model on ion + neutral cavity reference
+        q = float(audit.formal_charge)
+        r_born = compute_born_radius(mol)
+        dG_born = compute_textbook_born_energy(q, r_born, epsilon_r=78.4)
+
+        # Evaluate neutral reference for dipolar / cavity component
+        neutral_mol = get_neutralized_mol(mol)
+        dG_neutral, charge_model_used = _solve_neutral_continuum_pde(
+            neutral_mol,
+            active_solver,
+            ionic_strength=ionic_strength,
+            charge_model=charge_model,
+            box_size=box_size,
+            device=device,
+        )
+        total_dG = dG_born + dG_neutral
+        components = {
+            "dG_born_monopole": round(dG_born, 3),
+            "dG_neutral_cavity_polar": round(dG_neutral, 3),
+            "total_dG_hyd": round(total_dG, 3),
+            "born_radius_angstrom": round(r_born, 3),
+        }
+
+    # 4. Check if charge model fell back to Gasteiger
+    if charge_model_used == "gasteiger" and charge_model.lower() == "mmff94":
+        flags.append("CHARGE_MODEL_FALLBACK_GASTEIGER")
+
     runtime_ms = (time.perf_counter() - t0) * 1000.0
 
     return SolvationResult(
         smiles=std_smiles,
         delta_g_hyd=round(total_dG, 3),
         estimated_error=audit.base_uncertainty,
-        is_within_applicability_domain=audit.is_within_domain,
-        flags=audit.flags,
-        components={
-            "dG_continuum_pde": round(dG_continuum_val, 3),
-            "dG_born_ion_correction": round(dG_born_val, 3),
-            "total_dG_hyd": round(total_dG, 3),
-        },
+        uncertainty_provenance=audit.uncertainty_provenance,
+        is_within_applicability_domain=audit.is_within_domain and ("CHARGE_MODEL_FALLBACK_GASTEIGER" not in flags),
+        flags=flags,
+        components=components,
         formal_charge=audit.formal_charge,
         runtime_ms=round(runtime_ms, 2),
         charge_model_used=charge_model_used,

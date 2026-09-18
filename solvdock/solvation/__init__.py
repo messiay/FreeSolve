@@ -11,8 +11,9 @@ from solvdock.solvation.applicability import (
     is_push_pull_nitroaromatic,
 )
 from solvdock.solvation.born import (
-    compute_born_ion_correction,
-    compute_effective_born_radius,
+    compute_born_radius,
+    compute_textbook_born_energy,
+    compute_ion_solvation_estimate,
 )
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "ApplicabilityReport",
     "check_applicability_domain",
     "is_push_pull_nitroaromatic",
-    "compute_born_ion_correction",
-    "compute_effective_born_radius",
+    "compute_born_radius",
+    "compute_textbook_born_energy",
+    "compute_ion_solvation_estimate",
 ]

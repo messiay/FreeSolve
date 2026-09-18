@@ -26,13 +26,26 @@ KNOWN_PUSH_PULL_NITROAROMATIC_IDS: Set[str] = {
     "mobley_7176248",  # trifluralin
 }
 
+# ---------------------------------------------------------------------------
+# Uncertainty Calibration & Provenance Specifications
+# ---------------------------------------------------------------------------
+# 1. MEASURED EMPIRICAL BENCHMARKS (from held-out FreeSolv test split N=128):
+MEASURED_CLEAN_TEST_RMSE: float = 2.72   # kcal/mol: empirical RMSE on N=126 clean neutral test set
+MEASURED_PUSH_PULL_MAE: float = 24.50    # kcal/mol: empirical residual on profluralin & benefin (~25 kcal/mol)
+
+# 2. HEURISTIC RISK PRIORS (uncalibrated placeholders, clearly labeled as priors):
+HEURISTIC_NET_CHARGE_PRIOR: float = 15.00  # Placeholder prior: ionic solvation lacks non-linear saturation
+HEURISTIC_MACROCYCLE_PRIOR: float = 5.00   # Placeholder prior: unmeasured ring conformational entropy
+HEURISTIC_UNSUPPORTED_PRIOR: float = 8.00  # Placeholder prior: atom types lacking validated parameters
+
 
 @dataclass
 class ApplicabilityReport:
     """Detailed chemical audit report and uncertainty classification for a molecule."""
     is_within_domain: bool
     flags: List[str] = field(default_factory=list)
-    base_uncertainty: float = 1.20  # kcal/mol (standard 1-sigma on clean neutral drug-like set)
+    base_uncertainty: float = MEASURED_CLEAN_TEST_RMSE
+    uncertainty_provenance: str = "measured_freesolv_clean_test_rmse"
     formal_charge: int = 0
     num_rotatable_bonds: int = 0
     unsupported_elements: List[str] = field(default_factory=list)
@@ -64,21 +77,25 @@ def is_push_pull_nitroaromatic(mol: Chem.Mol, compound_id: str = "") -> bool:
 def check_applicability_domain(mol: Chem.Mol, compound_id: str = "") -> ApplicabilityReport:
     """Evaluates whether a molecule lies within the validated domain of the continuum PDE.
 
-    Returns an ApplicabilityReport with explicit warning flags and calibrated 1-sigma uncertainty.
+    Returns an ApplicabilityReport with explicit warning flags, calibrated 1-sigma uncertainty,
+    and clear labeling of measured vs. heuristic uncertainty provenance.
     """
     flags: List[str] = []
-    uncertainty: float = 1.20  # Baseline empirical RMSE on clean neutral drug-like split
+    uncertainty: float = MEASURED_CLEAN_TEST_RMSE
+    provenance: str = "measured_freesolv_clean_test_rmse"
     
     # 1. Formal charge check
     formal_charge = Chem.GetFormalCharge(mol)
     if formal_charge != 0:
         flags.append(f"NET_CHARGE_{formal_charge:+d}")
-        uncertainty = max(uncertainty, 3.50)
+        uncertainty = max(uncertainty, HEURISTIC_NET_CHARGE_PRIOR)
+        provenance = "heuristic_risk_prior_unsupported_net_charge"
 
     # 2. Push-pull nitroaromatic check
     if is_push_pull_nitroaromatic(mol, compound_id):
         flags.append("PUSH_PULL_NITROAROMATIC")
-        uncertainty = max(uncertainty, 4.50)
+        uncertainty = max(uncertainty, MEASURED_PUSH_PULL_MAE)
+        provenance = "measured_push_pull_outlier_residual"
 
     # 3. Heavy/unsupported elements check
     unsupported = []
@@ -90,27 +107,33 @@ def check_applicability_domain(mol: Chem.Mol, compound_id: str = "") -> Applicab
                 unsupported.append(sym)
     if unsupported:
         flags.append(f"UNSUPPORTED_ELEMENTS_{'_'.join(unsupported)}")
-        uncertainty = max(uncertainty, 5.00)
+        uncertainty = max(uncertainty, HEURISTIC_UNSUPPORTED_PRIOR)
+        provenance = "heuristic_risk_prior_unsupported_elements"
 
     # 4. Macrocycle check (ring size >= 12)
     ring_info = mol.GetRingInfo()
     has_macrocycle = any(len(ring) >= 12 for ring in ring_info.AtomRings())
     if has_macrocycle:
         flags.append("MACROCYCLE")
-        uncertainty = max(uncertainty, 3.00)
+        uncertainty = max(uncertainty, HEURISTIC_MACROCYCLE_PRIOR)
+        if "measured" in provenance:
+            provenance = "heuristic_risk_prior_macrocycle"
 
     # 5. Conformational entropy / flexibility check
     n_rot = Lipinski.NumRotatableBonds(mol)
     if n_rot > 8:
         flags.append(f"HIGH_FLEXIBILITY_{n_rot}_ROTBONDS")
-        # Add 0.15 kcal/mol per rotatable bond above 8
-        uncertainty += 0.15 * (n_rot - 8)
+        # Add uncalibrated heuristic penalty of 0.20 kcal/mol per rotatable bond above 8
+        uncertainty += 0.20 * (n_rot - 8)
+        if "measured" in provenance:
+            provenance = "heuristic_risk_prior_flexibility"
 
     is_valid = len(flags) == 0
     return ApplicabilityReport(
         is_within_domain=is_valid,
         flags=flags,
         base_uncertainty=round(uncertainty, 2),
+        uncertainty_provenance=provenance,
         formal_charge=formal_charge,
         num_rotatable_bonds=n_rot,
         unsupported_elements=unsupported,
