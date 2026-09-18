@@ -1,6 +1,6 @@
 """Differentiable gradient-descent pose optimizer over torsion angles and so(3) rigid coordinates."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.optim as optim
@@ -55,6 +55,11 @@ class PoseOptimizer:
         steps: int = 20,
         lr: float = 0.05,
         optimizer_type: str = "adam",
+        thetas_init: Optional[torch.Tensor] = None,
+        omega_init: Optional[torch.Tensor] = None,
+        translation_init: Optional[torch.Tensor] = None,
+        fixed_grid_origin: Optional[torch.Tensor] = None,
+        precomputed_dG_pocket: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         """Refines the ligand pose in the pocket by gradient descent on the combined potential.
 
@@ -64,6 +69,11 @@ class PoseOptimizer:
             steps: Number of gradient descent steps (default 20).
             lr: Learning rate (default 0.05).
             optimizer_type: 'adam' or 'lbfgs'.
+            thetas_init: Optional starting torsion angles tensor (K,).
+            omega_init: Optional starting so(3) vector tensor (3,).
+            translation_init: Optional starting translation vector tensor (3,).
+            fixed_grid_origin: Optional precomputed spatial grid origin.
+            precomputed_dG_pocket: Optional precomputed static pocket solvation energy.
 
         Returns:
             Dict containing refined RDKit Mol, delta_G_bind, and component breakdown.
@@ -84,19 +94,23 @@ class PoseOptimizer:
             poc_charges = torch.empty((0,), dtype=torch.float32, device=self.device)
             poc_z = torch.empty((0,), dtype=torch.int64, device=self.device)
 
-        # Compute fixed grid origin centered on the initial complex
-        all_initial = torch.cat([lig_coords, poc_coords], dim=0) if poc_coords.shape[0] > 0 else lig_coords
-        fixed_grid_origin = self.potential.grid_engine.get_grid_origin(all_initial)
+        # Compute fixed grid origin centered on the initial complex if not pre-passed
+        if fixed_grid_origin is None:
+            all_initial = torch.cat([lig_coords, poc_coords], dim=0) if poc_coords.shape[0] > 0 else lig_coords
+            fixed_grid_origin = self.potential.grid_engine.get_grid_origin(all_initial)
         ligand_center = lig_coords.mean(dim=0, keepdim=True)
 
         # 3. Precompute static pocket solvation (invariant across all steps for rigid receptor)
-        dG_pocket = None
-        if poc_coords.shape[0] > 0:
-            with torch.no_grad():
-                dG_pocket, _ = self.potential.compute_solvation(poc_coords, poc_charges)
-                # Invariance verification check
-                dG_pocket_verify, _ = self.potential.compute_solvation(poc_coords, poc_charges)
-                assert torch.allclose(dG_pocket, dG_pocket_verify, atol=1e-6), "Pocket solvation must be strictly invariant"
+        if precomputed_dG_pocket is not None:
+            dG_pocket = precomputed_dG_pocket
+        else:
+            dG_pocket = None
+            if poc_coords.shape[0] > 0:
+                with torch.no_grad():
+                    dG_pocket, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                    # Invariance verification check
+                    dG_pocket_verify, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                    assert torch.allclose(dG_pocket, dG_pocket_verify, atol=1e-6), "Pocket solvation must be strictly invariant"
 
         # Precompute static ligand solvation if rigid (K == 0)
         dG_ligand_static = None
@@ -106,9 +120,20 @@ class PoseOptimizer:
                 dG_ligand_static, _ = self.potential.compute_solvation(lig_coords, lig_charges)
 
         # 4. Parameters to optimize: thetas (K,), omega (3,), translation (3,)
-        thetas = torch.zeros(K, dtype=torch.float32, device=self.device, requires_grad=(K > 0))
-        omega = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
-        translation = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
+        if thetas_init is not None and K > 0:
+            thetas = thetas_init.clone().detach().to(device=self.device, dtype=torch.float32).requires_grad_(True)
+        else:
+            thetas = torch.zeros(K, dtype=torch.float32, device=self.device, requires_grad=(K > 0))
+
+        if omega_init is not None:
+            omega = omega_init.clone().detach().to(device=self.device, dtype=torch.float32).requires_grad_(True)
+        else:
+            omega = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
+
+        if translation_init is not None:
+            translation = translation_init.clone().detach().to(device=self.device, dtype=torch.float32).requires_grad_(True)
+        else:
+            translation = torch.zeros(3, dtype=torch.float32, device=self.device, requires_grad=True)
 
         params = [omega, translation]
         if K > 0:

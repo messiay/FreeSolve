@@ -10,6 +10,7 @@ from rdkit.Chem import AllChem
 from solvdock.core.grid_engine import SpatialGridEngine
 from solvdock.core.solvation_pde import SolvationPDESolver
 from solvdock.core.pose_optimizer import PoseOptimizer
+from solvdock.core.basin_hopping import BasinHoppingDockingEngine, BasinHoppingResult
 from solvdock.pipeline.energy import CombinedPotential
 
 
@@ -161,5 +162,80 @@ class SolvDockRefiner:
             else:
                 with Chem.SDWriter(output_path) as writer:
                     writer.write(result["mol"])
+
+        return result
+
+    def dock_global(
+        self,
+        ligand_input: Union[str, Chem.Mol],
+        pocket_input: Optional[Union[str, Chem.Mol]] = None,
+        n_trials: int = 15,
+        temperature: float = 300.0,
+        box_radius: float = 8.0,
+        step_size_trans: float = 2.0,
+        step_size_rot: float = 0.5,
+        step_size_dihedral: float = 0.5,
+        local_steps: int = 8,
+        local_lr: float = 0.05,
+        rmsd_clustering_cutoff: float = 1.0,
+        seed: Optional[int] = None,
+        output_path: Optional[str] = None,
+    ) -> BasinHoppingResult:
+        """Performs global stochastic basin-hopping docking over the molecular complex.
+
+        Explores translational, rotational, and conformational space by coupling
+        Metropolis-Hastings barrier jumping with local gradient descent on the full
+        unrolled continuum solvation potential.
+
+        Args:
+            ligand_input: Ligand file path (SDF, PDB), SMILES string, or RDKit Mol.
+            pocket_input: Optional receptor pocket file path (PDB, SDF) or RDKit Mol.
+            n_trials: Number of outer basin-hopping Monte Carlo cycles.
+            temperature: Simulation temperature in Kelvin (governs barrier crossing).
+            box_radius: Half-width of search box around pocket center (Angstroms).
+            step_size_trans: Maximum translational perturbation per trial (Angstroms).
+            step_size_rot: Standard deviation of axis-angle rotation jump (radians).
+            step_size_dihedral: Maximum torsion angle perturbation per trial (radians).
+            local_steps: Inner-loop gradient descent iterations per trial.
+            local_lr: Learning rate for inner-loop gradient descent.
+            rmsd_clustering_cutoff: Heavy-atom RMSD cutoff for distinct docking modes (Angstroms).
+            seed: Optional random seed for reproducible stochastic trajectories.
+            output_path: Optional output file path (SDF or PDB) to save top docking pose.
+
+        Returns:
+            BasinHoppingResult containing best pose, free energy, mode clusters,
+            and complete acceptance trajectory.
+        """
+        lig_mol = self._load_molecule(ligand_input)
+        poc_mol = self._load_molecule(pocket_input) if pocket_input is not None else None
+
+        engine = BasinHoppingDockingEngine(
+            optimizer=self.optimizer,
+            temperature=temperature,
+            step_size_trans=step_size_trans,
+            step_size_rot=step_size_rot,
+            step_size_dihedral=step_size_dihedral,
+            box_radius=box_radius,
+            local_steps=local_steps,
+            local_lr=local_lr,
+            rmsd_clustering_cutoff=rmsd_clustering_cutoff,
+            seed=seed,
+        )
+
+        result = engine.run(
+            initial_mol=lig_mol,
+            pocket_mol=poc_mol,
+            n_trials=n_trials,
+        )
+
+        if output_path is not None:
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            ext = os.path.splitext(output_path)[1].lower()
+            if ext == ".pdb":
+                with Chem.PDBWriter(output_path) as writer:
+                    writer.write(result.best_mol)
+            else:
+                with Chem.SDWriter(output_path) as writer:
+                    writer.write(result.best_mol)
 
         return result
