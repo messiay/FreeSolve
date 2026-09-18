@@ -144,13 +144,14 @@ class BasinHoppingDockingEngine:
 
         # 2. Pocket coordinates and reference center
         if pocket_mol is not None and pocket_mol.GetNumAtoms() > 0:
-            poc_coords, poc_charges, _ = self.optimizer.extract_mol_tensors(pocket_mol)
+            poc_coords, poc_charges, poc_z = self.optimizer.extract_mol_tensors(pocket_mol)
             pocket_center_t = torch.mean(poc_coords, dim=0)
             pocket_center = pocket_center_t.detach().cpu().numpy()
-            ref_grid_coords = poc_coords
+            ref_grid_coords = torch.cat([lig_coords_initial, poc_coords], dim=0)
         else:
             poc_coords = torch.empty((0, 3), dtype=torch.float32, device=self.optimizer.device)
             poc_charges = torch.empty((0,), dtype=torch.float32, device=self.optimizer.device)
+            poc_z = torch.empty((0,), dtype=torch.int64, device=self.optimizer.device)
             pocket_center = ligand_initial_center.copy()
             ref_grid_coords = lig_coords_initial
 
@@ -159,7 +160,7 @@ class BasinHoppingDockingEngine:
         if poc_coords.shape[0] > 0:
             with torch.no_grad():
                 dG_pocket, _ = self.optimizer.potential.compute_solvation(
-                    poc_coords, poc_charges, grid_origin=fixed_grid_origin
+                    poc_coords, poc_charges, atomic_numbers=poc_z
                 )
         else:
             dG_pocket = torch.tensor(0.0, device=self.optimizer.device)

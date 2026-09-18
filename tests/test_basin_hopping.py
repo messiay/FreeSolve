@@ -183,3 +183,37 @@ def test_solvdock_refiner_dock_global_integration():
     assert np.isfinite(result.best_delta_G_bind)
     assert "delta_G_solv" in result.best_components
     assert len(result.top_modes) >= 1
+
+
+def test_basin_hopping_with_pocket_receptor():
+    """Verifies basin-hopping simulation when both ligand and pocket receptor are present."""
+    grid = SpatialGridEngine(box_size=20)
+    pde = SolvationPDESolver(steps=2, disable_residual_mlp=True)
+    pot = CombinedPotential(pde_solver=pde, grid_engine=grid)
+    opt = PoseOptimizer(pot)
+
+    engine = BasinHoppingDockingEngine(
+        optimizer=opt,
+        temperature=300.0,
+        step_size_trans=1.0,
+        step_size_rot=0.3,
+        step_size_dihedral=0.3,
+        box_radius=5.0,
+        local_steps=3,
+        local_lr=0.05,
+        rmsd_clustering_cutoff=1.0,
+        seed=42,
+    )
+
+    lig_mol = _build_test_mol("CCO")
+    pocket_mol = _build_test_mol("c1ccccc1")
+
+    result = engine.run(initial_mol=lig_mol, pocket_mol=pocket_mol, n_trials=3)
+
+    assert isinstance(result, BasinHoppingResult)
+    assert np.isfinite(result.best_delta_G_bind)
+    assert "e_direct" in result.best_components
+    assert "ddG_solv" in result.best_components
+    assert "dG_pocket" in result.best_components
+    assert len(result.trajectories) == 4
+    assert len(result.top_modes) >= 1

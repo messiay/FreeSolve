@@ -107,9 +107,9 @@ class PoseOptimizer:
             dG_pocket = None
             if poc_coords.shape[0] > 0:
                 with torch.no_grad():
-                    dG_pocket, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                    dG_pocket, _ = self.potential.compute_solvation(poc_coords, poc_charges, atomic_numbers=poc_z)
                     # Invariance verification check
-                    dG_pocket_verify, _ = self.potential.compute_solvation(poc_coords, poc_charges)
+                    dG_pocket_verify, _ = self.potential.compute_solvation(poc_coords, poc_charges, atomic_numbers=poc_z)
                     assert torch.allclose(dG_pocket, dG_pocket_verify, atol=1e-6), "Pocket solvation must be strictly invariant"
 
         # Precompute static ligand solvation if rigid (K == 0)
