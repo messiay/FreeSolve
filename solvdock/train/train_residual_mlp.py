@@ -28,7 +28,7 @@ from solvdock.train.generate_gist_dataset import generate_dataset
 
 
 def prepare_molecule_fields(
-    smiles: str,
+    smiles: Union[str, Dict[str, Any]],
     box_size: int = 25,
     grid_spacing: float = 1.0,
     device: str = "cpu",
@@ -36,9 +36,16 @@ def prepare_molecule_fields(
     optimize_conformer: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Prepares external electric field and solvent density for a small molecule."""
-    mol = Chem.MolFromSmiles(smiles)
+    if isinstance(smiles, dict):
+        cid = str(smiles.get("id", ""))
+        smiles_str = str(smiles.get("smiles", ""))
+    else:
+        cid = ""
+        smiles_str = str(smiles)
+
+    mol = Chem.MolFromSmiles(smiles_str)
     if mol is None:
-        raise ValueError(f"Invalid SMILES string: {smiles}")
+        raise ValueError(f"Invalid SMILES string: {smiles_str}")
 
     mol = Chem.AddHs(mol)
     AllChem.EmbedMolecule(mol, randomSeed=42)
@@ -51,27 +58,9 @@ def prepare_molecule_fields(
     coords = torch.zeros((num_atoms, 3), dtype=torch.float32, device=device)
     charges = torch.zeros((num_atoms,), dtype=torch.float32, device=device)
 
-    # Compute atomic partial charges
-    mmff_props = None
-    if charge_model.lower() == "mmff94":
-        mmff_props = AllChem.MMFFGetMoleculeProperties(mol, mmffVariant="MMFF94")
-        if mmff_props is None:
-            raise RuntimeError(f"MMFF94 parameterization failed for '{smiles}'.")
-
-    if mmff_props is not None:
-        for i in range(num_atoms):
-            q = float(mmff_props.GetMMFFPartialCharge(i))
-            charges[i] = 0.0 if (np.isnan(q) or np.isinf(q)) else q
-    else:
-        AllChem.ComputeGasteigerCharges(mol)
-        for i, atom in enumerate(mol.GetAtoms()):
-            try:
-                q = float(atom.GetProp("_GasteigerCharge"))
-                if np.isnan(q) or np.isinf(q):
-                    q = 0.0
-            except KeyError:
-                q = 0.0
-            charges[i] = q
+    # Compute atomic partial charges via unified charge engine
+    from solvdock.core.charges import assign_charges
+    charges, _ = assign_charges(mol, scheme=charge_model, compound_id=cid, device=device)
 
     for i in range(num_atoms):
         pos = conf.GetAtomPosition(i)

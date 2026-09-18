@@ -90,6 +90,7 @@ def _solve_neutral_continuum_pde(
     active_solver: SolvationPDESolver,
     ionic_strength: float = 0.0,
     charge_model: str = "mmff94",
+    compound_id: str = "",
     box_size: int = 24,
     device: str = "cpu",
 ) -> Tuple[float, str]:
@@ -110,24 +111,10 @@ def _solve_neutral_continuum_pde(
     coords = torch.zeros((num_atoms, 3), dtype=torch.float32, device=device)
     charges = torch.zeros((num_atoms,), dtype=torch.float32, device=device)
 
-    charge_model_used = charge_model.lower()
-    mmff_props = None
-    if charge_model_used == "mmff94":
-        mmff_props = AllChem.MMFFGetMoleculeProperties(mol_with_h, mmffVariant="MMFF94")
-
-    if mmff_props is not None:
-        for i in range(num_atoms):
-            q = float(mmff_props.GetMMFFPartialCharge(i))
-            charges[i] = 0.0 if (torch.isnan(torch.tensor(q)) or torch.isinf(torch.tensor(q))) else q
-    else:
-        charge_model_used = "gasteiger"
-        AllChem.ComputeGasteigerCharges(mol_with_h)
-        for i, atom in enumerate(mol_with_h.GetAtoms()):
-            try:
-                q = float(atom.GetProp("_GasteigerCharge"))
-                charges[i] = 0.0 if (torch.isnan(torch.tensor(q)) or torch.isinf(torch.tensor(q))) else q
-            except KeyError:
-                charges[i] = 0.0
+    from solvdock.core.charges import assign_charges
+    charges, charge_model_used = assign_charges(
+        mol_with_h, scheme=charge_model, compound_id=compound_id, device=device
+    )
 
     for i in range(num_atoms):
         pos = conf.GetAtomPosition(i)
@@ -239,6 +226,7 @@ def predict_solvation(
             active_solver,
             ionic_strength=ionic_strength,
             charge_model=charge_model,
+            compound_id=compound_id,
             box_size=box_size,
             device=device,
         )

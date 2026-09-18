@@ -44,30 +44,13 @@ class MolecularTopology:
             coords[i] = [pos.x, pos.y, pos.z]
             atomic_nums[i] = self.mol.GetAtomWithIdx(i).GetAtomicNum()
 
-        # Compute partial charges (default: MMFF94)
-        mmff_props = None
-        if charge_model.lower() == "mmff94":
-            mmff_props = AllChem.MMFFGetMoleculeProperties(self.mol, mmffVariant="MMFF94")
-
-        if mmff_props is not None:
-            for i in range(self.num_atoms):
-                q = float(mmff_props.GetMMFFPartialCharge(i))
-                charges[i] = 0.0 if (np.isnan(q) or np.isinf(q)) else q
-        else:
-            # Gasteiger charge fallback
-            AllChem.ComputeGasteigerCharges(self.mol)
-            for i, atom in enumerate(self.mol.GetAtoms()):
-                try:
-                    q = float(atom.GetProp("_GasteigerCharge"))
-                    if np.isnan(q) or np.isinf(q):
-                        q = 0.0
-                except KeyError:
-                    q = 0.0
-                charges[i] = q
+        # Compute partial charges via unified charge engine
+        from solvdock.core.charges import assign_charges
+        charges_t, self.charge_scheme_used = assign_charges(self.mol, scheme=charge_model)
 
         self.atom_coords = torch.from_numpy(coords)
         self.atomic_numbers = torch.from_numpy(atomic_nums)
-        self.partial_charges = torch.from_numpy(charges)
+        self.partial_charges = charges_t.cpu()
 
         # Identify rotatable bonds
         # Definition: single, non-ring bonds where BOTH endpoint heavy atoms

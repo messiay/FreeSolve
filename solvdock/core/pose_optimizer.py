@@ -27,25 +27,20 @@ class PoseOptimizer:
 
     def extract_mol_tensors(self, mol: Chem.Mol) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Extracts coordinates, charges, and atomic numbers from an RDKit Mol."""
+        from solvdock.core.charges import get_partial_charges
+
         num_atoms = mol.GetNumAtoms()
         conf = mol.GetConformer()
 
         coords = torch.zeros((num_atoms, 3), dtype=torch.float32, device=self.device)
-        charges = torch.zeros((num_atoms,), dtype=torch.float32, device=self.device)
         atomic_nums = torch.zeros((num_atoms,), dtype=torch.int64, device=self.device)
 
         for i, atom in enumerate(mol.GetAtoms()):
             pos = conf.GetAtomPosition(i)
             coords[i] = torch.tensor([pos.x, pos.y, pos.z], device=self.device)
             atomic_nums[i] = atom.GetAtomicNum()
-            try:
-                q = float(atom.GetProp("_GasteigerCharge"))
-                if np.isnan(q) or np.isinf(q):
-                    q = 0.0
-            except KeyError:
-                q = 0.0
-            charges[i] = q
 
+        charges = get_partial_charges(mol, device=self.device)
         return coords, charges, atomic_nums
 
     def refine(

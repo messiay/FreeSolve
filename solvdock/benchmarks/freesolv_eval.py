@@ -94,8 +94,10 @@ def evaluate_freesolv(
 
         start_t = time.perf_counter()
         try:
-            E, rho = prepare_molecule_fields(smiles, device=device, charge_model=charge_model)
+            E, rho = prepare_molecule_fields(item, device=device, charge_model=charge_model)
             if charge_model.lower() == "mmff94":
+                mmff_success += 1
+            elif charge_model.lower() == "am1bcc":
                 mmff_success += 1
             else:
                 gasteiger_count += 1
@@ -183,8 +185,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate SolvDock on FreeSolv.")
     parser.add_argument("--subsample", type=int, default=None,
                         help="Optional integer to subsample test molecules (default: None, evaluates full 128).")
-    parser.add_argument("--charge_model", type=str, default="mmff94", choices=["mmff94", "gasteiger"],
-                        help="Partial charge calculation model (default: 'mmff94').")
+    parser.add_argument("--charge_model", "--charge-model", type=str, default="mmff94", choices=["mmff94", "gasteiger", "am1bcc"],
+                        help="Partial charge calculation model (default: 'mmff94', options: 'mmff94', 'gasteiger', 'am1bcc').")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--constants", type=str, default="configs/calibrated_constants.yaml")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/residual_mlp.pt")

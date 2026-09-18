@@ -84,7 +84,7 @@ class SolvDockRefiner:
         # 4. Pose Optimizer
         self.optimizer = PoseOptimizer(self.potential, device=self.device)
 
-    def _load_molecule(self, mol_input: Union[str, Chem.Mol]) -> Chem.Mol:
+    def _load_molecule(self, mol_input: Union[str, Chem.Mol], charge_model: str = "mmff94") -> Chem.Mol:
         """Helper to load a molecule from SMILES, file, or RDKit Mol."""
         if isinstance(mol_input, Chem.Mol):
             mol = Chem.Mol(mol_input)
@@ -104,17 +104,16 @@ class SolvDockRefiner:
                 if mol is not None:
                     mol = Chem.AddHs(mol)
                     AllChem.EmbedMolecule(mol, randomSeed=42)
-                    AllChem.ComputeGasteigerCharges(mol)
         else:
             raise ValueError(f"Unsupported molecule input: {mol_input}")
 
         if mol is None:
             raise ValueError(f"Failed to load molecule from {mol_input}")
 
-        # Compute Gasteiger charges if not present
-        needs_charges = any(not a.HasProp("_GasteigerCharge") for a in mol.GetAtoms())
-        if needs_charges:
-            AllChem.ComputeGasteigerCharges(mol)
+        # Compute or preserve partial charges via unified charge engine
+        from solvdock.core.charges import assign_charges, has_existing_charges
+        if not has_existing_charges(mol):
+            assign_charges(mol, scheme=charge_model)
 
         return mol
 
@@ -125,6 +124,7 @@ class SolvDockRefiner:
         output_path: Optional[str] = None,
         max_steps: int = 20,
         lr: float = 0.05,
+        charge_model: str = "mmff94",
     ) -> Dict[str, Any]:
         """Refines the ligand pose in the pocket binding site.
 
@@ -134,6 +134,7 @@ class SolvDockRefiner:
             output_path: Optional output file path (SDF or PDB) to save refined pose.
             max_steps: Maximum gradient descent iterations.
             lr: Learning rate for pose optimization.
+            charge_model: Charge scheme ('mmff94', 'am1bcc', 'gasteiger', 'preserve').
 
         Returns:
             Dict containing:
@@ -142,8 +143,8 @@ class SolvDockRefiner:
                 'components': Dictionary of energy breakdown (E_LJ, E_Coulomb, ΔG_solv, etc.)
                 'steps_taken': Number of steps executed before convergence
         """
-        lig_mol = self._load_molecule(ligand_input)
-        poc_mol = self._load_molecule(pocket_input) if pocket_input is not None else None
+        lig_mol = self._load_molecule(ligand_input, charge_model=charge_model)
+        poc_mol = self._load_molecule(pocket_input, charge_model=charge_model) if pocket_input is not None else None
 
         result = self.optimizer.refine(
             initial_mol=lig_mol,
@@ -179,6 +180,7 @@ class SolvDockRefiner:
         local_lr: float = 0.05,
         rmsd_clustering_cutoff: float = 1.0,
         seed: Optional[int] = None,
+        charge_model: str = "mmff94",
         output_path: Optional[str] = None,
     ) -> BasinHoppingResult:
         """Performs global stochastic basin-hopping docking over the molecular complex.
@@ -200,14 +202,15 @@ class SolvDockRefiner:
             local_lr: Learning rate for inner-loop gradient descent.
             rmsd_clustering_cutoff: Heavy-atom RMSD cutoff for distinct docking modes (Angstroms).
             seed: Optional random seed for reproducible stochastic trajectories.
+            charge_model: Charge scheme ('mmff94', 'am1bcc', 'gasteiger', 'preserve').
             output_path: Optional output file path (SDF or PDB) to save top docking pose.
 
         Returns:
             BasinHoppingResult containing best pose, free energy, mode clusters,
             and complete acceptance trajectory.
         """
-        lig_mol = self._load_molecule(ligand_input)
-        poc_mol = self._load_molecule(pocket_input) if pocket_input is not None else None
+        lig_mol = self._load_molecule(ligand_input, charge_model=charge_model)
+        poc_mol = self._load_molecule(pocket_input, charge_model=charge_model) if pocket_input is not None else None
 
         engine = BasinHoppingDockingEngine(
             optimizer=self.optimizer,
