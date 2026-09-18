@@ -12,22 +12,26 @@ def solve_poisson(
     grid_spacing: float = 1.0,
     epsilon_0: float = 1.0 / (4.0 * math.pi * 332.0637),
     method: str = "greens_function",
+    ionic_strength: float = 0.0,
+    dielectric_constant: float = 78.4,
 ) -> torch.Tensor:
-    """Solves Poisson's equation ∇²Φ = -ρ_q / ε₀ on a 3D grid via FFT.
+    """Solves Poisson's or Linearized Poisson-Boltzmann equation on a 3D grid via FFT.
 
-    To approximate open (isolated / non-periodic) boundary conditions and avoid
-    spurious self-interaction across periodic boundaries, the grid is zero-padded
-    by at least one box-width in each spatial dimension before the FFT and cropped
-    back to the original dimensions afterward.
+    When ionic_strength == 0.0 (default):
+        ∇²Φ = -ρ_q / ε₀ (Standard Poisson equation in open boundary conditions).
+
+    When ionic_strength > 0.0:
+        ∇²Φ - κ²Φ = -ρ_q / ε₀ (Linearized Poisson-Boltzmann with Debye-Hückel screening).
+        κ = sqrt(8 * pi * N_A * e^2 * I / (1000 * 4*pi*eps0 * eps_r * k_B * T)).
+        Screened Green's function: G(r) = exp(-κ * r) / (4πε₀r).
 
     Args:
         charge_grid: Tensor of shape (1, 1, D, H, W) containing charge density ρ_q.
         grid_spacing: Grid spacing Δx in Angstroms.
         epsilon_0: Dielectric permittivity of vacuum (in consistent simulation units).
-        method: Solver formulation:
-            - 'greens_function' (default): Hockney-Eastwood FFT convolution with
-              free-space Coulomb Green's function G(r) = 1 / (4πε₀r), exact for open boundaries.
-            - 'discrete_laplacian': Inversion using discrete 7-point Laplacian Fourier eigenvalues.
+        method: Solver formulation ('greens_function' or 'discrete_laplacian').
+        ionic_strength: Salt concentration / ionic strength in Molar (e.g. 0.15 for physiological saline).
+        dielectric_constant: Solvent relative permittivity ε_r for Debye length calculation (default 78.4).
 
     Returns:
         phi: Electrostatic potential Φ of shape (1, 1, D, H, W).
@@ -60,15 +64,31 @@ def solve_poisson(
         Z, Y, X = torch.meshgrid(z_coords, y_coords, x_coords, indexing="ij")
         R = torch.sqrt(Z ** 2 + Y ** 2 + X ** 2)
 
-        # Free space Green's function G(r) = 1 / (4 * pi * eps0 * r)
+        # Compute inverse Debye length kappa (in 1/Angstrom)
+        # kappa = sqrt(8 * pi * N_A * e^2 * I / (1000 * 4*pi*eps0 * eps_r * k_B * T))
+        if ionic_strength > 0.0:
+            k_b_t = 0.001987204 * 298.15  # kcal/mol
+            n_a_per_a3 = 6.02214076e-4    # molecules / Angstrom^3 per Molar
+            coulomb_const = 332.0637      # kcal * A / mol
+            kappa2 = (8.0 * math.pi * n_a_per_a3 * coulomb_const / (float(dielectric_constant) * k_b_t)) * float(ionic_strength)
+            kappa = math.sqrt(max(kappa2, 0.0))
+        else:
+            kappa = 0.0
+
+        # Free space or Debye-Huckel screened Green's function
         G = torch.zeros_like(R)
         nonzero_mask = R > 0
-        G[nonzero_mask] = 1.0 / (4.0 * math.pi * eps0 * R[nonzero_mask])
-        # Regularize self-interaction at r=0 using the volume-averaged kernel for grid voxel
-        # Analytical average of 1/r over sphere of equivalent volume (R_eff = dx * (3/(4pi))^(1/3)):
-        # <1/r> = 3 / (2 * R_eff)
         r_eff = dx * ((3.0 / (4.0 * math.pi)) ** (1.0 / 3.0))
-        G[~nonzero_mask] = 3.0 / (8.0 * math.pi * eps0 * r_eff)
+
+        if kappa > 0.0:
+            screening = torch.exp(-kappa * R[nonzero_mask])
+            G[nonzero_mask] = screening / (4.0 * math.pi * eps0 * R[nonzero_mask])
+            # Attenuate self-interaction regularizer by average screening inside voxel
+            self_factor = max(1.0 - 0.375 * kappa * r_eff, 0.20)
+            G[~nonzero_mask] = (3.0 / (8.0 * math.pi * eps0 * r_eff)) * self_factor
+        else:
+            G[nonzero_mask] = 1.0 / (4.0 * math.pi * eps0 * R[nonzero_mask])
+            G[~nonzero_mask] = 3.0 / (8.0 * math.pi * eps0 * r_eff)
 
         # 3D FFT convolution
         G_tensor = G.unsqueeze(0).unsqueeze(0)  # (1, 1, pD, pH, pW)
@@ -81,6 +101,14 @@ def solve_poisson(
         return phi
 
     elif method == "discrete_laplacian":
+        if ionic_strength > 0.0:
+            k_b_t = 0.001987204 * 298.15
+            n_a_per_a3 = 6.02214076e-4
+            coulomb_const = 332.0637
+            kappa2 = (8.0 * math.pi * n_a_per_a3 * coulomb_const / (float(dielectric_constant) * k_b_t)) * float(ionic_strength)
+        else:
+            kappa2 = 0.0
+
         # Discrete Laplacian eigenvalue inversion with zero-padding
         # Pad by 1 box width on both sides: shape 3D x 3H x 3W
         padded_rho = F.pad(charge_grid, (W, W, H, H, D, D), mode="constant", value=0.0)
@@ -98,12 +126,13 @@ def solve_poisson(
             + 2.0 * (torch.cos(Kx * dx) - 1.0)
         ) / (dx ** 2)
 
+        # (∇² - κ²)Φ = -ρ/ε₀ => (denom - κ²)Φ_hat = -ρ_hat / ε₀ => Φ_hat = ρ_hat / (ε₀ * (κ² - denom))
         rho_hat = torch.fft.rfftn(padded_rho, dim=(-3, -2, -1))
         phi_hat = torch.zeros_like(rho_hat)
 
-        # ∇²Φ = -ρ/ε₀  =>  denom * Φ_hat = -ρ_hat / ε₀  =>  Φ_hat = ρ_hat / (-ε₀ * denom)
-        mask = denom != 0
-        phi_hat[..., mask] = (rho_hat[..., mask] / eps0) / (-denom[mask])
+        effective_denom = kappa2 - denom  # Always >= 0 since denom <= 0 and kappa2 >= 0
+        mask = effective_denom > 1e-12
+        phi_hat[..., mask] = (rho_hat[..., mask] / eps0) / effective_denom[mask]
         phi_hat[..., 0, 0, 0] = 0.0
 
         phi_padded = torch.fft.irfftn(phi_hat, s=(pD, pH, pW), dim=(-3, -2, -1))

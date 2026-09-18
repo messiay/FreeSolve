@@ -1,0 +1,40 @@
+# SolvDock Solvation Engine: Frozen Release v1.0.0
+# Immutable baseline configuration for public plug-and-play solvation predictions.
+
+version: "1.0.0"
+release_date: "2026-09-18"
+framework: "SolvDock Continuum Ginzburg-Landau Solvation PDE"
+
+# Physical Parameters
+epsilon_water: 78.4
+temperature_kelvin: 298.15
+grid_spacing: 1.0        # Angstroms (dx = 1.0 A)
+unrolled_steps: 8        # P relaxation steps
+dt: 0.01                 # pseudo-time integration step
+charge_model: "mmff94"   # default with Gasteiger fallback
+disable_residual_mlp: true  # strict physics kernel
+
+# Calibrated Ginzburg-Landau Constants
+P_sat: 0.0035
+alpha: 3.5
+beta: 0.0001
+chi_e: 0.0070
+cs2: 0.5
+gamma_rot: 0.50
+
+# Validated Performance Benchmarks (FreeSolv Held-Out Test Split N=128)
+full_test_n: 128
+full_test_pearson_r: 0.7583
+full_test_spearman_rho: 0.7751
+full_test_rmse_kcal: 2.8450
+
+clean_test_n: 126
+clean_test_pearson_r: 0.7940
+clean_test_spearman_rho: 0.7929
+clean_test_rmse_kcal: 2.7201
+
+# Default Calibrated Uncertainty
+base_clean_uncertainty_kcal: 1.20
+push_pull_nitroaromatic_uncertainty_kcal: 4.50
+net_charged_uncertainty_kcal: 3.50
+unsupported_elements_uncertainty_kcal: 5.00
