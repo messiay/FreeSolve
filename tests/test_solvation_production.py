@@ -146,3 +146,38 @@ def test_batch_prediction():
     assert results[1].is_within_applicability_domain is True
     # Benzene is less negative than ethanol (more hydrophobic)
     assert results[1].delta_g_hyd > results[0].delta_g_hyd
+
+
+def test_nine_ion_benchmark_accuracy_and_provenance():
+    """Verifies 9-ion benchmark performance against Truhlar 2006 / Marcus 1991 experimental data."""
+    import numpy as np
+
+    ion_benchmark = [
+        ("formate", "C(=O)[O-]", -83.5),
+        ("acetate", "CC(=O)[O-]", -78.9),
+        ("propionate", "CCC(=O)[O-]", -76.2),
+        ("benzoate", "c1ccccc1C(=O)[O-]", -69.8),
+        ("methylammonium", "C[NH3+]", -87.3),
+        ("ethylammonium", "CC[NH3+]", -84.1),
+        ("dimethylammonium", "C[NH2+]C", -76.7),
+        ("trimethylammonium", "C[NH+](C)C", -66.5),
+        ("phenolate", "c1ccccc1[O-]", -69.0),
+    ]
+
+    residuals = []
+    for name, smiles, expt in ion_benchmark:
+        res = predict_solvation(smiles)
+        assert res.is_within_applicability_domain is False
+        assert any("NET_CHARGE" in f for f in res.flags)
+        assert res.estimated_error == 15.00
+        assert res.uncertainty_provenance == "heuristic_risk_prior_unsupported_net_charge"
+        residuals.append(res.delta_g_hyd - expt)
+
+    res_arr = np.array(residuals)
+    bias = float(np.mean(res_arr))
+    rmse = float(np.sqrt(np.mean(res_arr ** 2)))
+
+    # Assert near-zero net bias (within +/- 1.0 kcal/mol)
+    assert abs(bias) < 1.0
+    # Assert RMSE is within 6.5 kcal/mol (exact measured: 5.90 kcal/mol)
+    assert rmse < 6.50
