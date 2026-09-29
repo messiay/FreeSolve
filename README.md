@@ -1,5 +1,6 @@
 # FreeSolvE: Solvent-Mediated Differentiable Pose Refinement & Biophysical Inductive Bias for PyTorch
 
+[![PyPI](https://img.shields.io/pypi/v/freesolve.svg)](https://pypi.org/project/freesolve/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PoseBusters](https://img.shields.io/badge/PoseBusters-Validated-teal.svg)](https://github.com/trident-bio/posebusters)
@@ -35,7 +36,13 @@
 
 ## 🚀 Installation
 
-Install FreeSolvE in editable mode directly from this repository:
+Install directly from **PyPI**:
+
+```bash
+pip install freesolve
+```
+
+Or install in editable mode from source:
 
 ```bash
 git clone https://github.com/messiay/FreeSolve.git
