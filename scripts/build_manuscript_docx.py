@@ -461,7 +461,7 @@ def main():
     add_heading_styled(doc, "5. Conclusion and Code Availability", 1)
     doc.add_paragraph(
         "FreeSolvE bridges the chasm between statistical generative AI and physical reality in biomolecular docking. By leveraging continuum aqueous solvation as an ultra-fast thermodynamic cushion and optimizing poses via differentiable articulated forward kinematics, FreeSolvE resolves the clash crisis of generative biology without the brittle parameterization overhead of classical molecular mechanics.\n\n"
-        "All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are available open-source under the MIT License at https://github.com/SolvDock/FreeSolvE."
+        "All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are available open-source under the MIT License at https://github.com/messiay/FreeSolve, and published on PyPI (https://pypi.org/project/freesolve/, pip install freesolve)."
     )
 
     add_heading_styled(doc, "References", 1)

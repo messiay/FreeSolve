@@ -316,7 +316,7 @@ def build_html():
         FreeSolvE bridges the chasm between statistical generative AI and physical reality in biomolecular docking. By leveraging continuum aqueous solvation as an ultra-fast thermodynamic cushion and optimizing poses via differentiable articulated forward kinematics, FreeSolvE resolves the clash crisis of generative biology without the brittle parameterization overhead of classical molecular mechanics.
     </p>
     <p>
-        All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are open-source under the MIT License at <a href="https://github.com/SolvDock/FreeSolvE">https://github.com/SolvDock/FreeSolvE</a>.
+        All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are open-source under the MIT License at <a href="https://github.com/messiay/FreeSolve">https://github.com/messiay/FreeSolve</a> and published on PyPI at <a href="https://pypi.org/project/freesolve/">https://pypi.org/project/freesolve/</a> (<code>pip install freesolve</code>).
     </p>
 
     <h2>References</h2>
