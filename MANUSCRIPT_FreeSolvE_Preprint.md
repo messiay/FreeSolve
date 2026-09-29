@@ -1,9 +1,9 @@
 # FreeSolvE: Solvent-Mediated Differentiable Pose Refinement and Ultra-Fast Biophysical Inductive Bias for Molecular Generation and Docking
 
-**Arjun et al.**  
-*Department of Computational Biology and Molecular Biophysics*  
-*Preprint compiled for bioRxiv / ChemRxiv submission*  
-*Correspondence: Arjun (arjun@solvdock.org)*  
+**Arjun Subbaraman**  
+*Independent Researcher, Bangalore, Karnataka, India*  
+*Preprint compiled for bioRxiv submission (Subject Area: Bioinformatics / Biophysics)*  
+*Correspondence: arjun@solvdock.org*  
 
 ---
 
@@ -289,11 +289,14 @@ FreeSolvE is open-source under the MIT License and published on the Python Packa
 ---
 
 
+### Funding
+This research received no external grant or financial assistance from any public, commercial, or not-for-profit funding agency.
+
 ### Competing Interests
-The authors declare no competing financial or non-financial interests.
+The author declares no competing financial or non-financial interests.
 
 ### Author Contributions
-A. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch package, executed the PoseBusters benchmarks, and wrote the manuscript.
+A.S. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch library, performed the PoseBusters and FreeSolv computational benchmarks, analyzed the data, and wrote the manuscript.
 
 ### Acknowledgments
 We thank the open-source structural biology and cheminformatics communities, particularly the developers of RDKit, PyTorch, and PoseBusters, for providing benchmark datasets and validation suites.

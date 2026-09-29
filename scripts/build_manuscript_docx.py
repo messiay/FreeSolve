@@ -263,10 +263,10 @@ def main():
     meta_p = doc.add_paragraph()
     meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     meta_p.paragraph_format.space_after = Pt(16)
-    run_author = meta_p.add_run("Arjun et al.\n")
+    run_author = meta_p.add_run("Arjun Subbaraman\n")
     run_author.font.bold = True
     run_author.font.size = Pt(12)
-    run_affil = meta_p.add_run("Department of Computational Biology and Molecular Biophysics\nPreprint compiled for bioRxiv / ChemRxiv Submission\nCorrespondence: Arjun (arjun@solvdock.org)")
+    run_affil = meta_p.add_run("Independent Researcher, Bangalore, Karnataka, India\nPreprint compiled for bioRxiv submission (Subject Area: Bioinformatics / Biophysics)\nCorrespondence: arjun@solvdock.org")
     run_affil.font.size = Pt(10)
     run_affil.font.italic = True
     run_affil.font.color.rgb = RGBColor(108, 117, 125)
@@ -904,13 +904,17 @@ def main():
         "All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are available open-source under the MIT License at **https://github.com/messiay/FreeSolve**, and published on PyPI at **https://pypi.org/project/freesolve/** (`pip install freesolve`)."
     )
 
+    add_heading_styled(doc, "Funding", 2)
+    p = doc.add_paragraph()
+    format_inline_runs(p, "This research received no external grant or financial assistance from any public, commercial, or not-for-profit funding agency.")
+
     add_heading_styled(doc, "Competing Interests", 2)
     p = doc.add_paragraph()
-    format_inline_runs(p, "The authors declare no competing financial or non-financial interests.")
+    format_inline_runs(p, "The author declares no competing financial or non-financial interests.")
 
     add_heading_styled(doc, "Author Contributions", 2)
     p = doc.add_paragraph()
-    format_inline_runs(p, "A. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch package, executed the PoseBusters benchmarks, and wrote the manuscript.")
+    format_inline_runs(p, "A.S. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch library, performed the PoseBusters and FreeSolv computational benchmarks, analyzed the data, and wrote the manuscript.")
 
     add_heading_styled(doc, "Acknowledgments", 2)
     p = doc.add_paragraph()
