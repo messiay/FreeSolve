@@ -11,7 +11,7 @@
 
 Deep learning and generative diffusion architectures have revolutionized structural biology and structure-based drug design. However, state-of-the-art models—including DiffDock, NeuralPLexer, and AlphaFold3 derivatives—exhibit a notorious "physical plausibility gap," routinely producing severe steric clashes, bond distortions, and non-physical ligand-protein overlaps. In the official PoseBusters benchmark, leading generative docking models pass fewer than 40% of physical validity checks. Classical molecular dynamics (MD) relaxation is too computationally sluggish (requiring hours per complex) and brittle to rescue these poses at scale.
 
-Here, we introduce **FreeSolvE**, a differentiable continuum solvation and articulated kinematics engine natively optimized for both **commodity CPUs and GPUs**, designed to bridge statistical generative representations and physical biophysics at **ultra-high computational speed**. The core conceptual innovation of FreeSolvE is the utilization of **implicit aqueous solvation as an ultra-fast thermodynamic mediator**: in biological systems, molecular recognition is governed by solvent displacement and dielectric screening rather than gas-phase Coulombic attractions. By coupling an FFT-accelerated Poisson electrostatic solver (< 10 milliseconds per solve) and solvent-accessible cavity terms with logarithmic soft-core non-bonded potentials, FreeSolvE eliminates the catastrophic numerical divergences ($\propto r^{-12}$) characteristic of standard molecular mechanics while screening unphysical electrostatic spikes. Simultaneously, FreeSolvE parameterizes ligand flexibility strictly in internal torsion space ($\mathrm{SO}(3) \times \mathbb{R}^3 \times \mathbb{T}^k$) via differentiable forward kinematics, preserving covalent bond lengths and valence angles by construction.
+Here, we introduce **FreeSolvE**, a differentiable continuum solvation and articulated kinematics engine natively optimized for both **commodity CPUs and GPUs**, designed to bridge statistical generative representations and physical biophysics at **ultra-high computational speed**. The core conceptual innovation of FreeSolvE is the utilization of **implicit aqueous solvation as an ultra-fast thermodynamic mediator**: in biological systems, molecular recognition is governed by solvent displacement and dielectric screening rather than gas-phase Coulombic attractions. By coupling an FFT-accelerated Poisson electrostatic solver (< 10 milliseconds per solve) and solvent-accessible cavity terms with logarithmic soft-core non-bonded potentials, FreeSolvE eliminates the catastrophic numerical divergences (∝ r⁻¹², $\propto r^{-12}$) characteristic of standard molecular mechanics while screening unphysical electrostatic spikes. Simultaneously, FreeSolvE parameterizes ligand flexibility strictly in internal torsion space (SO(3) × ℝ³ × 𝕋ᵏ, $\mathrm{SO}(3) 	imes ℝ³ 	imes 𝕋ᵏ$) via differentiable forward kinematics, preserving covalent bond lengths and valence angles by construction.
 
 Benchmarked across 50 diverse co-crystal complexes from the official PoseBusters validation set executed entirely on standard commodity CPU hardware, FreeSolvE rescues severely clashing initial poses, driving the physical clash pass rate from **2.0% to 52.0% (+50.0% absolute gain)** in an average runtime of only **2.33 seconds per target** (over 18,000× faster than explicit-solvent MD), maintaining 100% pocket residency (mean displacement $0.85\text{ \AA}$) without requiring manual forcefield parameterization, topology preparation, or dedicated GPU hardware. Furthermore, when embedded as an end-to-end differentiable loss layer (`FreeSolvEPhysicsLoss`) during PyTorch neural network training, FreeSolvE introduces near-zero overhead (+14 ms/step) while completely eliminating pocket clashes within 5 epochs ($5 \to 0$ clashes), whereas standard mean squared error coordinate regression remains permanently trapped in steric collision. FreeSolvE is open-source and installable via PyPI (`pip install freesolve`), providing a general, ultra-fast, zero-setup biophysical inductive bias for macromolecular deep learning pipelines.
 
@@ -60,16 +60,16 @@ The root cause of this failure is what we term the **"Vacuum Fallacy"**: neural 
 ### 1.2 The Failure of Classical Molecular Mechanics: The Speed and Parameterization Bottleneck
 When computational chemists attempt to post-process AI-generated poses using classical molecular mechanics engines (such as OpenMM \cite{eastman2017openmm}, GROMACS \cite{abraham2015gromacs}, or AMBER \cite{case2005amber}), they encounter three severe roadblocks:
 
-1. **Extreme Computational Sluggishness**: Explicit-solvent MD relaxation requires 10 to 100 nanoseconds of equilibration to relax steric strains, requiring **hours to days per complex** (~43,200 seconds). Even simple vacuum energy minimization takes 15–45 seconds per target and frequently fails. In high-throughput virtual screening of $10^6$ compounds or real-time neural network training, this latency is prohibitive.
+1. **Extreme Computational Sluggishness**: Explicit-solvent MD relaxation requires 10 to 100 nanoseconds of equilibration to relax steric strains, requiring **hours to days per complex** (~43,200 seconds). Even simple vacuum energy minimization takes 15–45 seconds per target and frequently fails. In high-throughput virtual screening of 10⁶ ($10^6$) compounds or real-time neural network training, this latency is prohibitive.
 2. **The Brittle Topology Bottleneck**: Classical engines require complete parameterization (GAFF/AM1-BCC charge assignment, missing hydrogen inference, protonation state assignment). When presented with raw benchmark crystallographic structures or predicted complexes, classical engines fail abruptly with missing residue templates, non-standard cofactor errors, or valence bond undefined errors (e.g., OpenMM throwing `OpenMM Error: No template found for residue 0... missing 13 H atoms`).
-3. **The Numerical Singularity of $r^{-12}$ Repulsion**: The standard Lennard-Jones 12-6 potential:
+3. **The Numerical Singularity of r⁻¹² ($r^{-12}$) Repulsion**: The standard Lennard-Jones 12-6 potential:
    $$E_{\text{LJ}}(r) = 4\epsilon \left[ \left(\frac{\sigma}{r}\right)^{12} - \left(\frac{\sigma}{r}\right)^6 \right]$$
-   exhibits infinite steepness as $r \to 0$. When an AI model places two atoms at $r = 1.0\text{ \AA}$ (compared to $\sigma \approx 3.4\text{ \AA}$), $E_{\text{LJ}}$ exceeds $+10^6\text{ kcal/mol}$. Gradient-based minimizers produce gradients of magnitude $10^8\text{ kcal/(mol}\cdot\text{\AA)}$, catastrophically ejecting the ligand completely out of the binding cavity into bulk solution.
+   exhibits infinite steepness as $r \to 0$. When an AI model places two atoms at $r = 1.0\text{ \AA}$ (compared to $\sigma \approx 3.4\text{ \AA}$), $E_{\text{LJ}}$ exceeds +10⁶ kcal/mol ($+10^6\text{ kcal/mol}$). Gradient-based minimizers produce gradients of magnitude 10⁸ kcal/(mol·Å) ($10^8\text{ kcal/(mol}\cdot\text{\AA)}$), catastrophically ejecting the ligand completely out of the binding cavity into bulk solution.
 
 ### 1.3 The Core Novelty: Solvation as the Universal High-Speed Thermodynamic Cushion
 In cellular biology, binding does not take place in an empty vacuum—it is mediated by water. Solvent plays four pivotal roles:
-- **Dielectric Attenuation**: Water exhibits a bulk relative permittivity of $\epsilon_r \approx 78.4$. Long-range Coulombic forces that would violently distort molecules in vacuum are damped by almost two orders of magnitude in an aqueous environment.
-- **Hydrophobic Collapse and Desolvation**: Binding is largely driven by the entropic gain of displacing ordered water molecules from nonpolar binding pockets ($\Delta G_{\text{cavity}} \propto \text{SASA}$).
+- **Dielectric Attenuation**: Water exhibits a bulk relative permittivity of εᵣ ≈ 78.4 ($\epsilon_r \approx 78.4$). Long-range Coulombic forces that would violently distort molecules in vacuum are damped by almost two orders of magnitude in an aqueous environment.
+- **Hydrophobic Collapse and Desolvation**: Binding is largely driven by the entropic gain of displacing ordered water molecules from nonpolar binding pockets (ΔG_cavity ∝ SASA, $\Delta G_{\text{cavity}} \propto \text{SASA}$).
 - **Thermodynamic Cushioning**: Water provides continuous dielectric resistance that prevents charged groups from collapsing into unphysical contacts while guiding nonpolar moieties into complementary van der Waals contact.
 - **Ultra-Fast Analytical Solvation**: By formulating continuum solvation via 3D Fast Fourier Transforms (FFT), FreeSolvE evaluates the complete Poisson dielectric field in **under 10 milliseconds**, enabling real-time gradient evaluation during pose optimization on standard CPUs and mini-batch deep learning training on GPUs.
 
@@ -79,16 +79,17 @@ Here, we present **FreeSolvE**, an end-to-end differentiable framework that uses
 
 ## 2. Theory and Methods
 
-FreeSolvE models the protein-ligand system in a hybrid Eulerian-Lagrangian representation: the macromolecular receptor is represented on a discretized spatial dielectric and potential grid $\Omega \subset \mathbb{R}^3$, while the ligand is represented as an articulated kinematic chain with invariant covalent geometry.
+FreeSolvE models the protein-ligand system in a hybrid Eulerian-Lagrangian representation: the macromolecular receptor is represented on a discretized spatial dielectric and potential grid Ω ⊂ ℝ³ ($\Omega \subset ℝ³$), while the ligand is represented as an articulated kinematic chain with invariant covalent geometry.
 
 ### 2.1 Continuum Solvation and Sub-10ms FFT Poisson Electrostatics
 Rather than evaluating expensive pairwise all-atom continuum integrals, FreeSolvE calculates the electrostatic potential $\Phi(\mathbf{r})$ of the receptor via the Poisson equation on a uniform Cartesian grid ($\Delta x = 1.0\text{ \AA}$):
 $$\nabla \cdot \left[ \epsilon(\mathbf{r}) \nabla \Phi(\mathbf{r}) \right] = -\frac{\rho_q(\mathbf{r})}{\epsilon_0}$$
 
-Where $\rho_q(\mathbf{r})$ is the continuous spatial charge density generated by Gaussian charge splatting:
+Where ρ_q(r) ($
+ho_q(\mathbf{r})$) is the continuous spatial charge density generated by Gaussian charge splatting:
 $$\rho_q(\mathbf{r}) = \sum_{i=1}^{N_{\text{prot}}} q_i \left( \frac{1}{2\pi \sigma^2} \right)^{3/2} \exp\left( -\frac{\|\mathbf{r} - \mathbf{x}_i\|^2}{2\sigma^2} \right)$$
 with default kernel radius $\sigma = 1.0\text{ \AA}$. In the continuum dielectric approximation, the Poisson equation is solved in Fourier space via Green's function convolution:
-$$\hat{\Phi}(\mathbf{k}) = \frac{\hat{\rho}_q(\mathbf{k})}{\epsilon_0 \epsilon_{\text{eff}} \|\mathbf{k}\|^2}, \quad \Phi(\mathbf{r}) = \mathcal{F}^{-1}\{\hat{\Phi}(\mathbf{k})\}$$
+$$\hat{\Phi}(\mathbf{k}) = \frac{\hat{\rho}_q(\mathbf{k})}{\epsilon_0 \epsilon_{\text{eff}} ‖k‖² ($|\mathbf{k}|^2$) = \epsilon_0 \epsilon_{\text{eff}} |\mathbf{k}|^2}, \quad \Phi(\mathbf{r}) = \mathcal{F}^{-1}\{\hat{\Phi}(\mathbf{k})\}$$
 The electric field at any spatial coordinate is obtained via analytical grid differentiation:
 $$\mathbf{E}(\mathbf{r}) = -\nabla \Phi(\mathbf{r})$$
 
@@ -121,17 +122,17 @@ where $\gamma$ is the microscopic surface tension parameter calibrated against e
 ```
 
 ### 2.3 Continuous Soft-Core van der Waals Potential
-To eliminate the $r^{-12}$ singularity that destabilizes conventional forcefields during clash resolution, FreeSolvE introduces a $C^1$-continuous logarithmic soft-capping function. 
+To eliminate the r⁻¹² ($r^{-12}$) singularity that destabilizes conventional forcefields during clash resolution, FreeSolvE introduces a C¹ ($C^1$)-continuous logarithmic soft-capping function. 
 
-For any atomic pair $(i, j)$ with interatomic distance $r_{ij}$ and Lennard-Jones parameters $\sigma_{ij} = \frac{1}{2}(\sigma_i + \sigma_j)$ and $\epsilon_{ij} = \sqrt{\epsilon_i \epsilon_j}$, the standard Lennard-Jones potential $E_0(r_{ij})$ is computed:
+For any atomic pair $(i, j)$ with interatomic distance r_ij ($r_{ij}$) and Lennard-Jones parameters σ_ij ($\sigma_{ij} = \frac{1}{2}(\sigma_i + \sigma_j)$) and ε_ij ($\epsilon_{ij} = \sqrt{\epsilon_i \epsilon_j}$), the standard Lennard-Jones potential $E_0(r_{ij})$ is computed:
 $$E_0(r_{ij}) = 4\epsilon_{ij} \left[ \left(\frac{\sigma_{ij}}{r_{ij}}\right)^{12} - \left(\frac{\sigma_{ij}}{r_{ij}}\right)^6 \right]$$
 
-When $E_0(r_{ij}) \le E_{\text{cap}}$ (where $E_{\text{cap}} = 25.0\text{ kcal/mol}$), the exact physics of the standard Lennard-Jones potential is preserved identically. When severe steric overlap occurs ($E_0(r_{ij}) > E_{\text{cap}}$, typically $r_{ij} < 2.2\text{ \AA}$), the potential is smoothly capped:
+When E_0(r_ij) ≤ E_cap ($E_0(r_{ij}) \le E_{\text{cap}}$) (where E_cap = 25.0 kcal/mol, $E_{\text{cap}} = 25.0\text{ kcal/mol}$), the exact physics of the standard Lennard-Jones potential is preserved identically. When severe steric overlap occurs (E_0(r_ij) > E_cap, $E_0(r_{ij}) > E_{\text{cap}}$, typically $r_{ij} < 2.2\text{ \AA}$), the potential is smoothly capped:
 $$E_{\text{soft}}(r_{ij}) = E_{\text{cap}} + s_0 \cdot \ln\left( 1 + \frac{E_0(r_{ij}) - E_{\text{cap}}}{s_0} \right)$$
 with scaling factor $s_0 = 20.0\text{ kcal/mol}$.
 
 This formulation guarantees:
-1. **$C^1$ Continuity**: The energy and force curves match exactly at the transition boundary $E_0 = E_{\text{cap}}$.
+1. **C¹ ($C^1$) Continuity**: The energy and force curves match exactly at the transition boundary $E_0 = E_{\text{cap}}$.
 2. **Persistent Non-Zero Gradients**: The analytical spatial gradient is:
    $$\frac{\partial E_{\text{soft}}}{\partial r_{ij}} = \frac{1}{1 + \frac{E_0(r_{ij}) - E_{\text{cap}}}{s_0}} \cdot \frac{\partial E_0}{\partial r_{ij}}$$
    Unlike naive threshold clipping (`torch.clamp(E, max=25.0)`), which zeroes out the gradient ($\partial E / \partial r = 0$) and leaves atoms permanently stuck in clash overlap, the logarithmic soft-core potential maintains a monotonically increasing repulsive gradient that steadily drives clashing atoms apart without numerical blowups.
@@ -142,11 +143,11 @@ Traditional molecular dynamics energy minimization optimizes Cartesian coordinat
 FreeSolvE parameterizes the ligand strictly by its rigid-body degrees of freedom and rotatable bonds:
 $$\mathbf{p} = (\mathbf{T}, \boldsymbol{\omega}, \boldsymbol{\theta})$$
 where:
-- $\mathbf{T} \in \mathbb{R}^3$ is the global center-of-mass translation vector.
+- T ∈ ℝ³ ($\mathbf{T} \in ℝ³$) is the global center-of-mass translation vector.
 - $\boldsymbol{\omega} \in \mathfrak{so}(3)$ is the axis-angle representation of global rotation, mapped to the rotation group $\mathrm{SO}(3)$ via the matrix exponential:
   $$\mathbf{R} = \exp(\boldsymbol{\omega}_\times) = \mathbf{I} + \frac{\sin \|\boldsymbol{\omega}\|}{\|\boldsymbol{\omega}\|} \boldsymbol{\omega}_\times + \frac{1 - \cos \|\boldsymbol{\omega}\|}{\|\boldsymbol{\omega}\|^2} \boldsymbol{\omega}_\times^2$$
   guaranteeing strict orthogonality ($\mathbf{R}^T \mathbf{R} = \mathbf{I}$) without quaternion normalization drift.
-- $\boldsymbol{\theta} = (\theta_1, \theta_2, \dots, \theta_k) \in \mathbb{T}^k$ are the dihedral angles of the $k$ rotatable bonds identified in the ligand topology tree.
+- $\boldsymbol{\theta} = (\theta_1, \theta_2, \dots, \theta_k) \in \mathbb{T}ᵏ (𝕋ᵏ)$ are the dihedral angles of the $k$ rotatable bonds identified in the ligand topology tree.
 
 The atomic Cartesian coordinates are reconstructed via recursive forward kinematics using Rodrigues' rotation formula from root to leaf fragments:
 $$\mathbf{x}_m(\boldsymbol{\theta}) = \mathbf{x}_{\text{origin}} + \mathbf{R}_{\text{dihedral}}(\theta_k, \hat{\mathbf{u}}_k) \cdot (\mathbf{x}_{m,\text{rest}} - \mathbf{x}_{\text{origin}})$$
