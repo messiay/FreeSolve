@@ -904,18 +904,31 @@ def main():
         "All source code, PyTorch loss layers, benchmark datasets, and evaluation scripts are available open-source under the MIT License at **https://github.com/messiay/FreeSolve**, and published on PyPI at **https://pypi.org/project/freesolve/** (`pip install freesolve`)."
     )
 
+    add_heading_styled(doc, "Competing Interests", 2)
+    p = doc.add_paragraph()
+    format_inline_runs(p, "The authors declare no competing financial or non-financial interests.")
+
+    add_heading_styled(doc, "Author Contributions", 2)
+    p = doc.add_paragraph()
+    format_inline_runs(p, "A. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch package, executed the PoseBusters benchmarks, and wrote the manuscript.")
+
+    add_heading_styled(doc, "Acknowledgments", 2)
+    p = doc.add_paragraph()
+    format_inline_runs(p, "We thank the open-source structural biology and cheminformatics communities, particularly the developers of RDKit, PyTorch, and PoseBusters, for providing benchmark datasets and validation suites.")
+
     add_heading_styled(doc, "References", 1)
     refs = [
-        "Buttenschoen, M., et al. (2024). PoseBusters: AI-based docking methods fail to generate physically valid poses. Chemical Science, 15(8), 3034–3044. DOI: 10.1039/D3SC04185A.",
-        "Corso, G., et al. (2023). DiffDock: Diffusion Steps, Twists, and Turns for Molecular Docking. International Conference on Learning Representations (ICLR).",
-        "Abramson, J., et al. (2024). Accurate structure prediction of biomolecular interactions with AlphaFold 3. Nature, 630, 493–500.",
-        "Mobley, D. L., & Guthrie, J. P. (2014). FreeSolve: a database of experimental and calculated hydration free energies, with input files. Journal of Computer-Aided Molecular Design, 28(7), 711–720.",
-        "Eastman, P., et al. (2017). OpenMM 7: Rapid development of high performance algorithms for molecular dynamics. PLOS Computational Biology, 13(7), e1005659.",
-        "Trott, O., & Olson, A. J. (2010). AutoDock Vina: improving the speed and accuracy of docking with a new scoring function, efficient optimization, and multithreading. Journal of Computational Chemistry, 31(2), 455–461.",
-        "Stark, H., et al. (2022). EquiBind: Geometric Deep Learning for Drug Binding Structure Prediction. International Conference on Machine Learning (ICML).",
-        "Lu, W., et al. (2022). TANKBind: Trigonometry-Aware Neural Networks for Drug-Protein Binding Structure Prediction. bioRxiv.",
-        "Paszke, A., et al. (2019). PyTorch: An imperative style, high-performance deep learning library. Advances in Neural Information Processing Systems (NeurIPS), 32, 8024–8035.",
-        "Case, D. A., et al. (2005). The Amber biomolecular simulation programs. Journal of Computational Chemistry, 26(16), 1668–1688.",
+        "1. Buttenschoen, M., et al. (2024). PoseBusters: AI-based docking methods fail to generate physically valid poses. Chemical Science, 15(8), 3034–3044. DOI: 10.1039/D3SC04185A.",
+        "2. Corso, G., et al. (2023). DiffDock: Diffusion Steps, Twists, and Turns for Molecular Docking. International Conference on Learning Representations (ICLR).",
+        "3. Abramson, J., et al. (2024). Accurate structure prediction of biomolecular interactions with AlphaFold 3. Nature, 630, 493–500.",
+        "4. Mobley, D. L., & Guthrie, J. P. (2014). FreeSolve: a database of experimental and calculated hydration free energies, with input files. Journal of Computer-Aided Molecular Design, 28(7), 711–720.",
+        "5. Eastman, P., et al. (2017). OpenMM 7: Rapid development of high performance algorithms for molecular dynamics. PLOS Computational Biology, 13(7), e1005659.",
+        "6. Trott, O., & Olson, A. J. (2010). AutoDock Vina: improving the speed and accuracy of docking with a new scoring function, efficient optimization, and multithreading. Journal of Computational Chemistry, 31(2), 455–461.",
+        "7. Stark, H., et al. (2022). EquiBind: Geometric Deep Learning for Drug Binding Structure Prediction. International Conference on Machine Learning (ICML).",
+        "8. Lu, W., et al. (2022). TANKBind: Trigonometry-Aware Neural Networks for Drug-Protein Binding Structure Prediction. bioRxiv.",
+        "9. Paszke, A., et al. (2019). PyTorch: An imperative style, high-performance deep learning library. Advances in Neural Information Processing Systems (NeurIPS), 32, 8024–8035.",
+        "10. Case, D. A., et al. (2005). The Amber biomolecular simulation programs. Journal of Computational Chemistry, 26(16), 1668–1688.",
+        "11. Abraham, M. J., et al. (2015). GROMACS: High performance molecular simulations through multi-level parallelism from laptops to supercomputers. SoftwareX, 1–2, 19–25.",
     ]
     for r in refs:
         p = doc.add_paragraph()

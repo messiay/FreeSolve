@@ -11,7 +11,7 @@
 
 Deep learning and generative diffusion architectures have revolutionized structural biology and structure-based drug design. However, state-of-the-art models—including DiffDock, NeuralPLexer, and AlphaFold3 derivatives—exhibit a notorious "physical plausibility gap," routinely producing severe steric clashes, bond distortions, and non-physical ligand-protein overlaps. In the official PoseBusters benchmark, leading generative docking models pass fewer than 40% of physical validity checks. Classical molecular dynamics (MD) relaxation is too computationally sluggish (requiring hours per complex) and brittle to rescue these poses at scale.
 
-Here, we introduce **FreeSolvE**, a differentiable continuum solvation and articulated kinematics engine natively optimized for both **commodity CPUs and GPUs**, designed to bridge statistical generative representations and physical biophysics at **ultra-high computational speed**. The core conceptual innovation of FreeSolvE is the utilization of **implicit aqueous solvation as an ultra-fast thermodynamic mediator**: in biological systems, molecular recognition is governed by solvent displacement and dielectric screening rather than gas-phase Coulombic attractions. By coupling an FFT-accelerated Poisson electrostatic solver (< 10 milliseconds per solve) and solvent-accessible cavity terms with logarithmic soft-core non-bonded potentials, FreeSolvE eliminates the catastrophic numerical divergences (∝ r⁻¹², $\propto r^{-12}$) characteristic of standard molecular mechanics while screening unphysical electrostatic spikes. Simultaneously, FreeSolvE parameterizes ligand flexibility strictly in internal torsion space (SO(3) × ℝ³ × 𝕋ᵏ, $\mathrm{SO}(3) 	imes ℝ³ 	imes 𝕋ᵏ$) via differentiable forward kinematics, preserving covalent bond lengths and valence angles by construction.
+Here, we introduce **FreeSolvE**, a differentiable continuum solvation and articulated kinematics engine natively optimized for both **commodity CPUs and GPUs**, designed to bridge statistical generative representations and physical biophysics at **ultra-high computational speed**. The core conceptual innovation of FreeSolvE is the utilization of **implicit aqueous solvation as an ultra-fast thermodynamic mediator**: in biological systems, molecular recognition is governed by solvent displacement and dielectric screening rather than gas-phase Coulombic attractions. By coupling an FFT-accelerated Poisson electrostatic solver (< 10 milliseconds per solve) and solvent-accessible cavity terms with logarithmic soft-core non-bonded potentials, FreeSolvE eliminates the catastrophic numerical divergences (∝ r⁻¹², $\propto r^{-12}$) characteristic of standard molecular mechanics while screening unphysical electrostatic spikes. Simultaneously, FreeSolvE parameterizes ligand flexibility strictly in internal torsion space (SO(3) × ℝ³ × 𝕋ᵏ ($\mathrm{SO}(3) \times \mathbb{R}^3 \times \mathbb{T}^k$)) via differentiable forward kinematics, preserving covalent bond lengths and valence angles by construction.
 
 Benchmarked across 50 diverse co-crystal complexes from the official PoseBusters validation set executed entirely on standard commodity CPU hardware, FreeSolvE rescues severely clashing initial poses, driving the physical clash pass rate from **2.0% to 52.0% (+50.0% absolute gain)** in an average runtime of only **2.33 seconds per target** (over 18,000× faster than explicit-solvent MD), maintaining 100% pocket residency (mean displacement $0.85\text{ \AA}$) without requiring manual forcefield parameterization, topology preparation, or dedicated GPU hardware. Furthermore, when embedded as an end-to-end differentiable loss layer (`FreeSolvEPhysicsLoss`) during PyTorch neural network training, FreeSolvE introduces near-zero overhead (+14 ms/step) while completely eliminating pocket clashes within 5 epochs ($5 \to 0$ clashes), whereas standard mean squared error coordinate regression remains permanently trapped in steric collision. FreeSolvE is open-source and installable via PyPI (`pip install freesolve`), providing a general, ultra-fast, zero-setup biophysical inductive bias for macromolecular deep learning pipelines.
 
@@ -19,10 +19,10 @@ Benchmarked across 50 diverse co-crystal complexes from the official PoseBusters
 
 ## 1. Introduction
 
-Structure-based drug design (SBDD) relies fundamentally on predicting the three-dimensional geometry and binding thermodynamics of small-molecule ligands interacting with macromolecular drug targets. In recent years, geometric deep learning and generative diffusion models—most notably DiffDock \cite{corso2023diffdock}, EquiBind \cite{stark2022equibind}, TANKBind \cite{lu2022tankbind}, and unified biomolecular modeling frameworks such as AlphaFold3 \cite{abramson2024accurate}—have demonstrated unprecedented speed and global pose-finding capacity compared to classical stochastic docking engines such as AutoDock Vina \cite{trott2010autodock}.
+Structure-based drug design (SBDD) relies fundamentally on predicting the three-dimensional geometry and binding thermodynamics of small-molecule ligands interacting with macromolecular drug targets. In recent years, geometric deep learning and generative diffusion models—most notably DiffDock [2], EquiBind [7], TANKBind [8], and unified biomolecular modeling frameworks such as AlphaFold3 [3]—have demonstrated unprecedented speed and global pose-finding capacity compared to classical stochastic docking engines such as AutoDock Vina [6].
 
 ### 1.1 The "Vacuum Fallacy" and the Physical Plausibility Crisis
-Despite high apparent scoring against root-mean-square deviation (RMSD) metrics, recent rigorous evaluations have exposed severe biophysical flaws in purely statistical docking models. In a landmark study introducing the PoseBusters benchmark suite, Buttenschoen et al. (2024) \cite{buttenschoen2024posebusters} demonstrated that deep generative docking models frequently output physically impossible poses:
+Despite high apparent scoring against root-mean-square deviation (RMSD) metrics, recent rigorous evaluations have exposed severe biophysical flaws in purely statistical docking models. In a landmark study introducing the PoseBusters benchmark suite, Buttenschoen et al. (2024) [1] demonstrated that deep generative docking models frequently output physically impossible poses:
 - **DiffDock** passed only **36.4%** of PoseBusters physical validity criteria.
 - **TANKBind** passed only **24.5%**.
 - **EquiBind** passed only **0.3%**.
@@ -58,7 +58,7 @@ The root cause of this failure is what we term the **"Vacuum Fallacy"**: neural 
 ```
 
 ### 1.2 The Failure of Classical Molecular Mechanics: The Speed and Parameterization Bottleneck
-When computational chemists attempt to post-process AI-generated poses using classical molecular mechanics engines (such as OpenMM \cite{eastman2017openmm}, GROMACS \cite{abraham2015gromacs}, or AMBER \cite{case2005amber}), they encounter three severe roadblocks:
+When computational chemists attempt to post-process AI-generated poses using classical molecular mechanics engines (such as OpenMM [5], GROMACS [11], or AMBER [10]), they encounter three severe roadblocks:
 
 1. **Extreme Computational Sluggishness**: Explicit-solvent MD relaxation requires 10 to 100 nanoseconds of equilibration to relax steric strains, requiring **hours to days per complex** (~43,200 seconds). Even simple vacuum energy minimization takes 15–45 seconds per target and frequently fails. In high-throughput virtual screening of 10⁶ ($10^6$) compounds or real-time neural network training, this latency is prohibitive.
 2. **The Brittle Topology Bottleneck**: Classical engines require complete parameterization (GAFF/AM1-BCC charge assignment, missing hydrogen inference, protonation state assignment). When presented with raw benchmark crystallographic structures or predicted complexes, classical engines fail abruptly with missing residue templates, non-standard cofactor errors, or valence bond undefined errors (e.g., OpenMM throwing `OpenMM Error: No template found for residue 0... missing 13 H atoms`).
@@ -232,7 +232,7 @@ Table 2 reports the epoch history of the side-by-side training ablation:
 | 30 | 0.0201 | 1 | 0.2049 | **0** | +14.1 ms / step |
 
 ### 3.3 FreeSolv Experimental Hydration Free Energy Benchmark
-To validate the continuum solvation engine independently, we benchmarked FreeSolvE against the experimental **FreeSolv database** (Mobley et al. \cite{mobley2014freesolv}) across 128 diverse organic molecules.
+To validate the continuum solvation engine independently, we benchmarked FreeSolvE against the experimental **FreeSolv database** (Mobley et al. [4]) across 128 diverse organic molecules.
 
 ```
    ========================================================================================
@@ -288,6 +288,16 @@ FreeSolvE is open-source under the MIT License and published on the Python Packa
 
 ---
 
+
+### Competing Interests
+The authors declare no competing financial or non-financial interests.
+
+### Author Contributions
+A. conceived the study, designed the continuum solvation algorithm and articulated forward kinematics engine, implemented the FreeSolvE PyTorch package, executed the PoseBusters benchmarks, and wrote the manuscript.
+
+### Acknowledgments
+We thank the open-source structural biology and cheminformatics communities, particularly the developers of RDKit, PyTorch, and PoseBusters, for providing benchmark datasets and validation suites.
+
 ## References
 
 1. **Buttenschoen, M., et al.** (2024). PoseBusters: AI-based docking methods fail to generate physically valid poses. *Chemical Science*, 15(8), 3034–3044. DOI: 10.1039/D3SC04185A.
@@ -300,3 +310,4 @@ FreeSolvE is open-source under the MIT License and published on the Python Packa
 8. **Lu, W., et al.** (2022). TANKBind: Trigonometry-Aware Neural Networks for Drug-Protein Binding Structure Prediction. *bioRxiv*.
 9. **Paszke, A., et al.** (2019). PyTorch: An imperative style, high-performance deep learning library. *Advances in Neural Information Processing Systems (NeurIPS)*, 32, 8024–8035.
 10. **Case, D. A., et al.** (2005). The Amber biomolecular simulation programs. *Journal of Computational Chemistry*, 26(16), 1668–1688.
+11. **Abraham, M. J., et al.** (2015). GROMACS: High performance molecular simulations through multi-level parallelism from laptops to supercomputers. *SoftwareX*, 1–2, 19–25.
