@@ -3,18 +3,20 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "solvdock"
+name = "freesolve"
 version = "0.1.0"
-description = "Differentiable Mean-Field Solvation PDE + Torsion-Space Pose Optimizer"
-readme = "solvdock_architecture.md"
+description = "FreeSolvE: Solvent-Mediated Differentiable Pose Refinement and Biophysical Inductive Bias for PyTorch"
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.22.0",
     "scipy>=1.8.0",
     "pyyaml>=6.0",
+    "rdkit",
+    "python-docx",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["solvdock*"]
+include = ["freesolve*", "solvdock*"]

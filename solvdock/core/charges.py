@@ -147,6 +147,10 @@ def assign_charges(
 
     # 4. Gasteiger scheme
     if scheme == "gasteiger":
+        try:
+            Chem.SanitizeMol(mol)
+        except Exception:
+            pass
         AllChem.ComputeGasteigerCharges(mol)
         charges = torch.zeros((num_atoms,), dtype=torch.float32, device=device)
         for i, atom in enumerate(mol.GetAtoms()):

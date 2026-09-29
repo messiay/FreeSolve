@@ -41,6 +41,7 @@ class CombinedPotential(nn.Module):
         r_min: float = 0.8,
         gamma_rot: float = 0.50,
         max_pair_repulsion: float = 25.0,
+        debye_kappa: float = 0.0,
     ):
         super().__init__()
         self.pde_solver = pde_solver
@@ -49,6 +50,7 @@ class CombinedPotential(nn.Module):
         self.r_min = float(r_min)
         self.gamma_rot = float(gamma_rot)
         self.max_pair_repulsion = float(max_pair_repulsion) if max_pair_repulsion is not None else None
+        self.debye_kappa = float(debye_kappa)
 
     def get_atom_params(
         self, atomic_numbers: torch.Tensor, device: torch.device
@@ -105,19 +107,81 @@ class CombinedPotential(nn.Module):
         ratio6 = (sigma_ij ** 6) / r_eff6
         pair_lj = 4.0 * epsilon_ij * (ratio6 ** 2 - ratio6)
         if self.max_pair_repulsion is not None:
-            pair_lj = torch.clamp(pair_lj, max=self.max_pair_repulsion)
+            # Smooth soft-cap: pair_lj > E_cap transitions smoothly via log1p
+            # This maintains continuous outward repulsive gradients instead of killing gradients with hard clamp
+            e_cap = self.max_pair_repulsion
+            d_e = pair_lj - e_cap
+            pair_lj = torch.where(d_e > 0, e_cap + 20.0 * torch.log1p(d_e / 20.0), pair_lj)
         e_lj = torch.sum(pair_lj)
 
         # Coulomb: 332.0637 * (q_i * q_j) / (eps_eff * r)
         # Using distance-dependent dielectric eps_eff = 2.0 * r_eff for biological screening
         coulomb_const = 332.0637
-        e_coulomb = torch.sum(
+        pair_coulomb = (
             coulomb_const * (ligand_charges.unsqueeze(1) * pocket_charges.unsqueeze(0))
             / (2.0 * (r_eff ** 2))
         )
+        if self.debye_kappa > 0.0:
+            pair_coulomb = pair_coulomb * torch.exp(-self.debye_kappa * r_eff)
+        e_coulomb = torch.sum(pair_coulomb)
 
         e_direct = e_lj + e_coulomb
         return e_direct, e_lj, e_coulomb
+
+    def compute_intramolecular_energy(
+        self,
+        coords: torch.Tensor,
+        charges: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+        topo_scale_matrix: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Computes intramolecular non-bonded energy (LJ + Coulomb) respecting topological exclusions.
+
+        Returns (E_intra, E_lj, E_coulomb).
+        """
+        device = coords.device
+        N = coords.shape[0]
+        if N <= 1:
+            zero = torch.zeros(1, device=device, dtype=coords.dtype).squeeze()
+            return zero, zero, zero
+
+        diff = coords.unsqueeze(1) - coords.unsqueeze(0)
+        dist_sq = torch.sum(diff ** 2, dim=-1)
+        r_min6 = self.r_min ** 6
+        r_eff6 = dist_sq ** 3 + r_min6
+        r_eff = torch.pow(r_eff6, 1.0 / 6.0)
+
+        sig, eps = self.get_atom_params(atomic_numbers, device)
+        sigma_ij = 0.5 * (sig.unsqueeze(1) + sig.unsqueeze(0))
+        epsilon_ij = torch.sqrt(eps.unsqueeze(1) * eps.unsqueeze(0))
+
+        ratio6 = (sigma_ij ** 6) / r_eff6
+        pair_lj = 4.0 * epsilon_ij * (ratio6 ** 2 - ratio6)
+        if self.max_pair_repulsion is not None:
+            # Smooth soft-cap: maintains continuous outward repulsive gradients
+            e_cap = self.max_pair_repulsion
+            d_e = pair_lj - e_cap
+            pair_lj = torch.where(d_e > 0, e_cap + 20.0 * torch.log1p(d_e / 20.0), pair_lj)
+
+        coulomb_const = 332.0637
+        pair_coulomb = (
+            coulomb_const * (charges.unsqueeze(1) * charges.unsqueeze(0))
+            / (2.0 * (r_eff ** 2))
+        )
+        if self.debye_kappa > 0.0:
+            pair_coulomb = pair_coulomb * torch.exp(-self.debye_kappa * r_eff)
+
+        if topo_scale_matrix is not None:
+            scale = topo_scale_matrix.to(device=device, dtype=pair_lj.dtype)
+        else:
+            scale = torch.ones((N, N), device=device, dtype=pair_lj.dtype)
+            scale.fill_diagonal_(0.0)
+
+        # 0.5 prefactor because pairwise matrix has double counted pairs (i, j) and (j, i)
+        e_lj = 0.5 * torch.sum(pair_lj * scale)
+        e_coulomb = 0.5 * torch.sum(pair_coulomb * scale)
+        e_intra = e_lj + e_coulomb
+        return e_intra, e_lj, e_coulomb
 
     def compute_solvent_density(
         self,

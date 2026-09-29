@@ -7,6 +7,34 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 
+def build_topological_scale_matrix(mol: Chem.Mol, device: torch.device = None) -> torch.Tensor:
+    """Builds the N x N non-bonded interaction scaling matrix on the covalent bond graph.
+
+    Standards for molecular mechanics (AMBER / CHARMM / MMFF94):
+    - 1-2 bond (d_topo = 1): 0.0 (excluded)
+    - 1-3 angle (d_topo = 2): 0.0 (excluded, prevents false ~2.4 A steric clashes)
+    - 1-4 dihedral (d_topo = 3): 0.5 (scaled)
+    - d_topo >= 4 (non-bonded): 1.0 (full non-bonded)
+    - diagonal (self): 0.0
+    """
+    N = mol.GetNumAtoms()
+    if N == 0:
+        return torch.empty((0, 0), dtype=torch.float32, device=device)
+
+    topo_dist = Chem.GetDistanceMatrix(mol)
+    topo_t = torch.tensor(topo_dist, dtype=torch.int64)
+
+    scale = torch.zeros((N, N), dtype=torch.float32)
+    scale[topo_t == 3] = 0.5
+    scale[topo_t >= 4] = 1.0
+    # ensure diagonal is zero
+    scale.fill_diagonal_(0.0)
+
+    if device is not None:
+        scale = scale.to(device)
+    return scale
+
+
 class MolecularTopology:
     """Decomposes an RDKit Mol into a kinematic DAG and rotatable bond tree.
 
@@ -75,6 +103,9 @@ class MolecularTopology:
 
             if deg1 >= 2 and deg2 >= 2:
                 self.rotatable_bonds_list.append((a1.GetIdx(), a2.GetIdx()))
+
+        # Build topological non-bonded scaling matrix (1-2/1-3 exclusion, 1-4 0.5 scaling, >=4 1.0)
+        self.topo_scale_matrix = build_topological_scale_matrix(self.mol)
 
         # Determine the root atom / core ring system
         root_idx = self._find_root_atom()

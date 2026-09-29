@@ -8,8 +8,13 @@ build/
 .DS_Store
 *.log
 refined_pose.sdf
+zenodo_query.json
+~$*.docx
 
-# Heavy simulation grids and downloaded structural datasets
+# Benchmark archive downloads (heavy binaries)
+data/posebusters_paper/
+data/posebusters_benchmark_50/
+data/posebusters_paper_data.zip
 data/gist/
 data/casf2016/*.pdb
 data/casf2016/*.sdf
@@ -26,3 +31,7 @@ checkpoints/
 !data/casf2016/casf2016_core_285.txt
 !data/casf2016/CoreSet.dat
 !data/freesolv/database.txt
+
+# Preserve benchmark summary artifacts and figures
+!data/benchmarks/*
+!data/benchmarks/figures/*

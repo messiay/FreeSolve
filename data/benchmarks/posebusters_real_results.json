@@ -1,0 +1,128 @@
+{
+  "benchmark_name": "Official PoseBusters Real AI Benchmark (7MYU_ZR7)",
+  "reference": "Buttenschoen et al. (Chemical Science 2024)",
+  "package_version": "posebusters==0.6.5",
+  "system": "7MYU_ZR7 (SARS-CoV-2 Main Protease bound to non-covalent inhibitor)",
+  "tests": {
+    "sanitization": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "inchi_convertible": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "all_atoms_connected": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "no_radicals": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "bond_lengths": {
+      "raw_ai_prediction": false,
+      "solvdock_cartesian_relax": false,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "bond_angles": {
+      "raw_ai_prediction": false,
+      "solvdock_cartesian_relax": false,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "internal_steric_clash": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": false,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "aromatic_ring_flatness": {
+      "raw_ai_prediction": false,
+      "solvdock_cartesian_relax": false,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "non-aromatic_ring_non-flatness": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "double_bond_flatness": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "internal_energy": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": false,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "protein-ligand_maximum_distance": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "minimum_distance_to_protein": {
+      "raw_ai_prediction": false,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": false,
+      "openmm_minimized_reference": true
+    },
+    "minimum_distance_to_organic_cofactors": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "minimum_distance_to_inorganic_cofactors": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "minimum_distance_to_waters": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "volume_overlap_with_protein": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "volume_overlap_with_organic_cofactors": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "volume_overlap_with_inorganic_cofactors": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    },
+    "volume_overlap_with_waters": {
+      "raw_ai_prediction": true,
+      "solvdock_cartesian_relax": true,
+      "solvdock_hybrid_relax": true,
+      "openmm_minimized_reference": true
+    }
+  }
+}
