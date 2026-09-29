@@ -6,14 +6,14 @@
 [![PoseBusters](https://img.shields.io/badge/PoseBusters-Validated-teal.svg)](https://github.com/trident-bio/posebusters)
 [![bioRxiv](https://img.shields.io/badge/Preprint-bioRxiv-red.svg)](MANUSCRIPT_FreeSolvE_Preprint.html)
 
-**FreeSolvE** is a differentiable, GPU-accelerated continuum solvation and articulated kinematics engine designed to bridge statistical generative molecular models (DiffDock, AlphaFold3, NeuralPLexer, TANKBind) with physical biophysics at **ultra-high computational speed**.
+**FreeSolvE** is a differentiable continuum solvation and articulated kinematics engine natively optimized for both **CPU and GPU (CUDA)**, designed to bridge statistical generative molecular models (DiffDock, AlphaFold3, NeuralPLexer, TANKBind) with physical biophysics at **ultra-high computational speed**.
 
 ---
 
 ## ⚡ Key Highlights & Benchmark Results
 
 - **+50.0% Absolute Gain on Official PoseBusters Benchmark**: On 50 diverse co-crystal complexes from the official PoseBusters validation package, FreeSolvE rescues severely clashing generative poses, jumping from **2.0% to 52.0% validity** (exceeding raw DiffDock at 36.4%, TANKBind at 24.5%, and EquiBind at 0.3%).
-- **Ultra-High Speed (2.33s per Target)**: Completes full pocket clash rescue and energy minimization in an average of **2.33 seconds per target** (>18,000× faster than explicit-solvent molecular dynamics).
+- **Ultra-High Speed on Standard CPU (2.33s per Target)**: Completes full pocket clash rescue and energy minimization in an average of **2.33 seconds per target on a standard laptop CPU** (>18,000× faster than explicit-solvent molecular dynamics), requiring zero expensive GPU hardware for inference while supporting seamless CUDA GPU acceleration for deep learning training.
 - **Sub-10ms FFT Continuum Solvation**: Evaluates the complete 3D Poisson electrostatic potential and SASA cavity field via Fourier convolution in **under 8 milliseconds**.
 - **PyTorch Training Layer (`FreeSolvEPhysicsLoss`)**: Seamlessly plugs into PyTorch training loops with **< 15 ms overhead per mini-batch step**, eliminating generative pocket clashes from **5 down to 0 within 5 epochs**.
 - **Zero-Setup Preparation**: Operates directly on standard PDB and SDF files without requiring brittle manual topology curation, charge parameterization, or missing hydrogen repair (avoiding OpenMM template failure crashes).
