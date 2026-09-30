@@ -266,7 +266,7 @@ def main():
     run_author = meta_p.add_run("Arjun Subbaraman\n")
     run_author.font.bold = True
     run_author.font.size = Pt(12)
-    run_affil = meta_p.add_run("Independent Researcher, Bangalore, Karnataka, India\nPreprint compiled for bioRxiv submission (Subject Area: Bioinformatics / Biophysics)\nCorrespondence: arjun@solvdock.org")
+    run_affil = meta_p.add_run("Department of Biotechnology, PES University, Bangalore, Karnataka, India\nPreprint compiled for bioRxiv submission (Subject Area: Bioinformatics / Biophysics)\nCorrespondence: arjun@solvdock.org")
     run_affil.font.size = Pt(10)
     run_affil.font.italic = True
     run_affil.font.color.rgb = RGBColor(108, 117, 125)

@@ -1,7 +1,7 @@
 # FreeSolvE: Solvent-Mediated Differentiable Pose Refinement and Ultra-Fast Biophysical Inductive Bias for Molecular Generation and Docking
 
 **Arjun Subbaraman**  
-*Independent Researcher, Bangalore, Karnataka, India*  
+*Department of Biotechnology, PES University, Bangalore, Karnataka, India*  
 *Preprint compiled for bioRxiv submission (Subject Area: Bioinformatics / Biophysics)*  
 *Correspondence: arjun@solvdock.org*  
 
